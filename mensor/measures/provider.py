@@ -13,6 +13,58 @@ __all__ = ['MeasureProvider']
 
 
 class MeasureProvider(object):
+    """
+    This is the base class that provides the API contract for all data sources
+    in the `mensor` universe. Every `MeasureProvider` instance is a proxy to
+    a different data source, allowing identifiers, measures and dimensions to
+    be evaluated in different contexts; and the class exists simply to provide
+    metadata about the data stored therein.
+
+    Terminology:
+        There are three classes of metadata: identifiers, dimensions and
+        measures.
+
+        Identifiers - Specifications of statistical unit types; i.e. the
+            indivisible unit of an analysis. For example: "user", or "session",
+            etc.
+        Dimensions - Features associated with a statistical unit that are not
+            aggregatable, such as "country" of a "user" or "platform" of a
+            "client".
+        Measures - Features associated with a statistical unit that are
+            aggregatable (extensive), such as age, length, etc.
+
+        While not relevant in the context of MeasureProviders, "metrics" are
+        arbitrary functions of measures.
+
+        Note that all measures and identifiers can be used as dimensions, but
+        not vice versa.
+
+    Defining Metadata:
+
+        Setting and extracting metadata is done via a series of methods, which
+        are similar for each type of metadata.
+
+        Identifiers:
+        - .identifiers
+        - .add_identifier
+        - .unit_types
+        - .identifier_for_unit
+        - .foreign_keys_for_unit
+
+        Dimensions:
+        - .dimensions
+        - .add_dimension
+        - .dimensions_for_unit
+
+        Measures:
+        - .measures
+        - .add_measure
+        - .measures_for_unit
+
+    `MeasureProvider`s are registered into pools of `MeasureProvider`s called
+    `MeasureRegistry`s. Once registered, the registry can evaluate measures
+    transparently across all `MeasureProvider`s, handling the joins as necessary.
+    """
 
     def __init__(self, name=None, *, identifiers=None, measures=None, dimensions=None):
         # TODO: Support adding metadata like measure provider maintainer
@@ -75,8 +127,8 @@ class MeasureProvider(object):
         unit_type = self.identifier_for_unit(unit_type)
 
         foreign_keys = {}
-        for foreign_key in self.foreign_keys:
-            if self._unit_has_foreign_key(unit_type, foreign_key):
+        for foreign_key in self.identifiers:
+            if foreign_key != unit_type and self._unit_has_foreign_key(unit_type, foreign_key):
                 foreign_keys[foreign_key] = foreign_key
         return foreign_keys
 
@@ -110,7 +162,7 @@ class MeasureProvider(object):
         return dimensions
 
     def _unit_has_dimension(self, unit_type, dimension):
-        return unit_type.is_unique
+        return unit_type.is_primary
 
     # Measure specifications
 
@@ -139,11 +191,27 @@ class MeasureProvider(object):
         return measures
 
     def _unit_has_measure(self, unit_type, measure):
-        return True
+        return unit_type.is_primary
 
     # Resolution
 
     def resolve(self, names, unit_type=None, kind=None):
+        """
+        This method resolves one or more names of features optionally associated
+        with a unit_type and a kind. Note that this method is concerned about
+        *functional* resolution, so if `kind='dimension'` both identifiers
+        and measures will still be resolved, since they can be used as
+        dimensions.
+
+        Parameters:
+            names (str, list<str>): A name or list of names to resolve.
+            unit_type (str, None): A unit type for which the resolution should
+                be done.
+            kind (str): One of 'measure', 'dimension' or 'identifier'.
+
+        Returns:
+            _Dimension, _Measure, _StatisticalUnitIdentifier: The resolved object.
+        """
         if isinstance(names, dict):
             names = list(names)
         if not isinstance(names, list):
