@@ -172,7 +172,11 @@ class MeasureRegistry(object):
         """
         This is an internal method that traverses the `GraphCache` in order to
         resolve a particular measure/dimension/identifier for a specified
-        unit_type and path through the graph.
+        unit_type. Note that if `dimension` is a string representation graph
+        traversal (e.g. "transaction/person:seller/age") then the full graph
+        traversal is not verified, only the last step from e.g. "person:seller"
+        to "age", and the remainder of the path is appended to the 'via'
+        attribute.
 
         Parameters:
             unit_type (str, _StatisticalUnitIdentifier): The unit type for which
@@ -269,6 +273,28 @@ class MeasureRegistry(object):
         raise ValueError("No such dimension {} for unit type '{}'".format(dimension, unit_type))
 
     def _find_optimal_provision(self, unit_type, measures, dimensions, require_primary=True):
+        """
+        This method takes a set of meaures and dimensions for a given unit_type,
+        and generates a somewhat optimised sequence of `Provision` instances,
+        which indicate the MeasureProvider instance from which measures and
+        dimensions should be extracted. This is primarily useful for the
+        generation of an `EvaluationStrategy`.
+
+        Parameters:
+            unit_type (str, _StatisticalUnitIdentifier): The statistical unit
+                type for which indicated measures and dimensions should be
+                extracted.
+            measures (list<str,_Measure>): A set of measures to be extracted.
+            dimensions (list<str, _Dimension): A set of dimensions to be
+                extracted.
+            require_primary (bool): Whether to require the first `Provision` to
+                be from a `MeasureProvider` with `unit_type` as a primary
+                identifier.
+
+        Returns:
+            list<Provision>: A list of `Provision` instances which optimally
+                supply the requested measures and dimensions.
+        """
         # [Provision(provider, measures, dimensions), ...]
         unit_type = self._resolve_identifier(unit_type)
         measures = {measure: self._resolve_measure(unit_type, measure) for measure in measures}
