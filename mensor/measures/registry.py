@@ -1,443 +1,212 @@
-import json
+from collections import Counter
 
-import six
-from collections import namedtuple, Counter
-
-from .context import EvaluationContext
-from .provider import MeasureProvider
-from .types import _Dimension, Join
+from .strategy import EvaluationStrategy
+from .types import _Dimension, _ResolvedDimension, _ResolvedMeasure, Provision
+from ..utils import nested_dict_copy
 
 __all__ = ['MeasureRegistry']
 
 
-Provision = namedtuple('Provision', ['provider', 'measures', 'dimensions'])
-DimensionBundle = namedtuple('DimensionBundle', ['dimensions', 'measures'])
-
-
-class _ResolvedDimension(object):
-
-    def __init__(self, name, via='', providers=[], external=False, private=False):
-        self.name = name
-        self.via = via
-        self.providers = providers
-        self.external = external
-        self.private = private
-
-    @property
-    def path(self):
-        return '/'.join('/'.join([self.via, self.name]).split('/')[1:])
-
-    @property
-    def providers(self):
-        return self._providers
-
-    @providers.setter
-    def providers(self, providers):
-        self._providers = {}
-        if isinstance(providers, list):
-            for provider in providers:
-                assert isinstance(provider, MeasureProvider), "Invalid provider of type({})".format(type(provider))
-                self._providers[provider.name] = provider
-        elif isinstance(providers, dict):
-            self._providers.update(providers)
-        else:
-            raise ValueError("Invalid provider specification.")
-
-    @property
-    def via_next(self):
-        s = self.via.split('/')
-        if len(s) > 1:
-            return s[1]
-
-    @property
-    def resolved_next(self):
-        s = self.via.split('/')
-        if len(s) > 1:
-            return self.__class__(self.name, via='/'.join(s[1:]), providers=self.providers, external=self.external)
-        return self
-
-    @property
-    def as_external(self):
-        return self.__class__(self.name, via=self.via, providers=self.providers, external=True, private=self.private)
-
-    @property
-    def as_private(self):
-        return self.__class__(self.name, via=self.via, providers=self.providers, external=self.external, private=True)
-
-    def from_provider(self, provider):
-        if not isinstance(provider, MeasureProvider):
-            provider = self.providers[provider]
-
-        dim = provider.resolve(self.name)
-        if self.external:
-            dim = dim.as_external
-        if self.private:
-            dim = dim.as_private
-
-        return dim
-
-    def choose_provider(self, provider):
-        self.providers = {provider: self.providers[provider]}
-
-    def __repr__(self):
-        return '/'.join([self.via, self.name]) + '<{}>'.format(len(self.providers)) + (' (external)' if self.external else '')
-
-    def __hash__(self):
-        return hash(self.name)
-
-    def __eq__(self, other):
-        if isinstance(other, _ResolvedDimension):
-            if other.name == self.name and other.via == self.via:
-                return True
-        elif isinstance(other, _Dimension):
-            if other.name == self.name:
-                return True
-        elif isinstance(other, six.string_types):
-            if '/'.join([self.via, self.name]) == other:
-                return True
-        else:
-            return NotImplemented
-        return False
-
-
-class _ResolvedMeasure(_ResolvedDimension):
-
-    pass
-
-
-class EvaluationStrategy(object):
-
-    def __init__(self, registry, provider, unit_type, measures, segment_by=None, where=None, join=None, **opts):
-        self.registry = registry
-        self.provider = provider
-        self.unit_type = unit_type
-        self.measures = measures or []
-        self.where = where or []
-        self.segment_by = segment_by or []
-        self.join = join or []
-        self.opts = opts
-
-    def __repr__(self):
-        class StrategyEncoder(json.JSONEncoder):
-            def default(self, o):
-                if isinstance(o, EvaluationStrategy):
-                    return {
-                        'provider': o.provider,
-                        'unit_type': o.unit_type,
-                        'measures': o.measures,
-                        'where': o.where,
-                        'segment_by': o.segment_by,
-                        'join': o.join,
-                        'join_type': o.join_type
-                    }
-                return str(o)
-        return 'EvaluationStrategy(' + json.dumps(self, indent=4, cls=StrategyEncoder) + ')'
-
-    def add_join(self, unit_type, strategy):
-        # TODO: Make atomic
-        assert isinstance(strategy, EvaluationStrategy)
-        self.measures.extend(
-            (
-                measure.as_external.as_via(strategy.unit_type)
-                if strategy.unit_type != self.unit_type else
-                measure.as_external
-            ) for measure in strategy.measures if not measure.private
-        )
-        self.segment_by.extend(
-            (
-                dimension.as_external.as_via(strategy.unit_type)
-                if strategy.unit_type != self.unit_type else
-                dimension.as_external
-            )
-            for dimension in strategy.segment_by if not dimension.private
-        )
-        if unit_type not in strategy.segment_by:
-            strategy.segment_by.insert(0, strategy.provider.identifier_for_unit(unit_type.name))
-        self.join.append(strategy)
-        return self
-
-    @property
-    def join_type(self):
-        if any(not w.scoped for w in self.where):
-            return 'inner'
-        for join in self.join:
-            if join.join_type == 'inner':
-                return 'inner'
-        return 'left'
-
-    def run(self, ir_only=False, as_join=False, compatible=False, via=None):
-        # Step 1: Build joins
-        joins = []
-        if via is None:
-            via = tuple()
-        via += (self.unit_type.name,)
-
-        for join in self.join:
-            joins.append(join.run(
-                as_join=True,
-                compatible=join.provider._is_compatible_with(self.provider),
-                via=via
-            ))
-
-        # Step 2: Evaluate provider
-        if as_join and compatible:
-            try:
-                return Join(
-                    provider=self.provider,
-                    unit_type=self.unit_type,
-                    object=self.provider.get_ir(
-                        unit_type=self.unit_type,
-                        measures=self.measures,
-                        segment_by=self.segment_by,
-                        where=self.where,
-                        join=joins,
-                        via=via[1:],
-                        **self.opts
-                    ),
-                    how=self.join_type,
-                    compatible=True
-                )
-            except NotImplementedError:
-                pass
-
-        if ir_only:
-            return self.provider.get_ir(
-                unit_type=self.unit_type,
-                measures=self.measures,
-                segment_by=self.segment_by,
-                where=self.where,
-                join=joins,
-                via=via[1:],
-                **self.opts
-            )
-        else:
-            evaluated = self.provider.evaluate(
-                unit_type=self.unit_type,
-                measures=self.measures,
-                segment_by=self.segment_by,
-                where=self.where,
-                join=joins,
-                **self.opts
-            )
-
-            if as_join:
-                evaluated.columns = ['{}/{}'.format(self.unit_type.name, c) if c != self.unit_type else c for c in evaluated.columns]
-                return Join(
-                    provider=self.provider,
-                    unit_type=self.unit_type,
-                    object=evaluated,
-                    how=self.join_type,
-                    compatible=False
-                )
-            return evaluated
-
-    @classmethod
-    def from_spec(cls, registry, unit_type, measures, segment_by=None, where=None, **opts):
-
-        # Step 0: Resolve applicable measures and dimensions
-        unit_type = registry._resolve_identifier(unit_type)
-
-        measures = [
-            registry._resolve_measure(unit_type, measure) for measure in measures
-        ]
-
-        segment_by = [
-            registry._resolve_dimension(unit_type, dimension) for dimension in segment_by
-        ]
-
-        where = EvaluationContext.from_spec(unit_type=unit_type.name, spec=where)
-        assert where.unit_type == unit_type.name
-        where_dimensions = [
-            registry._resolve_dimension(unit_type, dimension)
-            for dimension in where.dimensions if dimension not in segment_by
-        ]
-
-        # Step 1: Collect measures and dimensions into groups based on current unit_type
-        # and next unit_type
-
-        current_evaluation = DimensionBundle(dimensions=[], measures=[])
-        next_evaluations = {}
-
-        def collect_dimensions(dimensions, kind='measures'):
-            for dimension in dimensions:
-                if not dimension.via_next:
-                    current_evaluation._asdict()[kind].append(dimension)
-                else:
-                    next_unit_type = registry._resolve_identifier(dimension.via_next)
-                    if dimension.via_next not in next_evaluations:
-                        next_evaluations[next_unit_type] = DimensionBundle(dimensions=[], measures=[])
-                    next_evaluations[next_unit_type]._asdict()[kind].append(dimension.resolved_next)
-
-        collect_dimensions(measures, kind='measures')
-        collect_dimensions(segment_by, kind='dimensions')
-        collect_dimensions(where_dimensions, kind='dimensions')
-
-        # Add required dimension for joining in next unit_types
-        for next_unit_type in next_evaluations:
-            foreign_key = registry._resolve_foreign_key(unit_type, next_unit_type)
-            if foreign_key not in current_evaluation.dimensions:
-                current_evaluation.dimensions.append(foreign_key.as_private)
-
-        # Step 2: Create optimal joins for current unit_type
-
-        provisions = registry._find_optimal_provision(
-            unit_type=unit_type,
-            measures=current_evaluation.measures,
-            dimensions=current_evaluation.dimensions
-        )
-
-        def constraints_for_provision(provision):
-            provision_constraints = []
-            for constraint in where.scoped_resolvable:
-                if len(
-                    set(constraint.dimensions)
-                    .difference(provision.provider.identifiers)
-                    .difference(provision.provider.dimensions)
-                    .difference(provision.provider.measures)
-                ) == 0:
-                    provision_constraints.append(constraint)
-            return provision_constraints
-
-        evaluations = [
-            cls(
-                registry=registry,
-                provider=provision.provider,
-                unit_type=unit_type,
-                measures=provision.measures,
-                segment_by=provision.dimensions,
-                where=constraints_for_provision(provision)
-            ) for provision in provisions
-        ]
-
-        # Step 3: For each next unit_type, recurse problem and join into above query
-
-        for foreign_key, dim_bundle in next_evaluations.items():
-            foreign_strategy = cls.from_spec(registry=registry, unit_type=foreign_key,
-                                             measures=dim_bundle.measures, segment_by=dim_bundle.dimensions,
-                                             where=where.via_next(foreign_key.name) if where is not None else None, **opts)
-            added = False
-            for sub_strategy in evaluations:
-                if foreign_key in sub_strategy.segment_by:
-                    sub_strategy.add_join(foreign_key, foreign_strategy)
-                    added = True
-                    break
-            if not added:
-                raise RuntimeError("Could not add foreign strategy: {}".format(foreign_strategy))
-
-        strategy = evaluations[0]
-        for sub_strategy in evaluations[1:]:
-            strategy.add_join(unit_type, sub_strategy)
-
-        strategy.where = list(set(strategy.where).union(where.resolvable))
-
-        # Step 4: Mark any resolved where dependencies as private, unless otherwise
-        # requested in `segment_by`
-
-        for dimension in strategy.segment_by:
-            for constraint in where.resolvable:
-                if dimension in constraint.dimensions and dimension not in segment_by:
-                    dimension.private = True
-
-        # Step 5: Return EvaluationStrategy, and profit.
-
-        return strategy
-
-
 class MeasureRegistry(object):
+    """
+    A `MeasureRegistry` instance is a wrapper around a pool of `MeasureProvider`
+    instances that generates a graph of relationships between all of the
+    provided identifiers, measures and dimensions. Relationships between these
+    features can then be extracted and used in various tasks, chief among which
+    being the evaluation of measures for a statistical unit type segmented by
+    various dimensions. The logic for the evaluation is handled by the
+    `.stategy.EvaluationStrategy` class. The only purpose of this class is to
+    construct and manage the graph.
+
+    To add `MeasureProvider`s to instances of this class, simply call the
+    `.registry()` method of this class and pass to it the relevant
+    `MeasureProvider` instance.
+
+    Relationships:
+        The graph formed by registering `MeasureProvider`s has the following
+        relationships.
+
+        unit_type -> measure
+        unit_type -> dimension
+        unit_type -> foreign_key
+        unit_type <- foreign_key [-> reverse_foreign_key]
+    """
+
+    class GraphCache(object):
+
+        def __init__(self, providers=None, identifiers=None, foreign_keys=None,
+                     reverse_foreign_keys=None, dimensions=None, measures=None):
+            self.providers = providers or {}
+            self.identifiers = identifiers or {}
+            self.foreign_keys = foreign_keys or {}
+            self.reverse_foreign_keys = reverse_foreign_keys or {}
+            self.dimensions = dimensions or {}
+            self.measures = measures or {}
+
+        def copy(self):
+            return MeasureRegistry.GraphCache(
+                **{
+                    key: nested_dict_copy(getattr(self, key))
+                    for key in ['providers', 'identifiers', 'foreign_keys', 'reverse_foreign_keys', 'dimensions', 'measures']
+                }
+            )
+
+        def register(self, provider):
+            for identifier in provider.identifiers:
+                self.register_identifier(identifier)
+
+                for unit_type in provider.identifiers:
+                    self.register_foreign_key(identifier, unit_type)
+
+                for dimension in provider.dimensions_for_unit(identifier):
+                    self.register_dimension(identifier, dimension)
+
+                for measure in provider.measures_for_unit(identifier):
+                    self.register_measure(identifier, measure)
+
+        def register_identifier(self, unit_type):
+            self._append(self.identifiers, [unit_type], unit_type)
+
+        def register_foreign_key(self, unit_type, foreign_key):
+            if unit_type == foreign_key:
+                return
+            if unit_type.is_unique:
+                self._append(self.foreign_keys, [unit_type, foreign_key], foreign_key)
+            elif foreign_key.is_unique:
+                self._append(self.reverse_foreign_keys, [unit_type, foreign_key], foreign_key)
+
+        def register_dimension(self, unit_type, dimension):
+            self._append(self.dimensions, [unit_type, dimension], dimension)
+
+        def register_measure(self, unit_type, measure):
+            self._append(self.measures, [unit_type, measure], measure)
+
+        def _extract(self, store, keys):
+            for i, key in enumerate(keys):
+                if key not in store:
+                    return []
+                store = store[key]
+            assert isinstance(store, list)
+            return store
+
+        def _append(self, store, keys, value):
+            for i, key in enumerate(keys):
+                if key not in store:
+                    if i == len(keys) - 1:
+                        store[key] = []
+                    else:
+                        store[key] = {}
+                store = store[key]
+            assert isinstance(store, list)
+            if len(store) > 0:
+                assert value.shared and all([d.shared for d in store]), "Attempted to add duplicate non-shared dimension '{}'.".format(value)
+            store.append(value)
 
     def __init__(self):
         self._providers = {}
-        self._identifiers = {}
-        self._foreign_keys = {}
-        self._dimensions = {}
-        self._measures = {}
+        self._cache = MeasureRegistry.GraphCache()
+
+    def _cache_refresh(self):
+        self._cache = MeasureRegistry.GraphCache()
+        for provider in self._providers.values():
+            self._cache.register(provider)
 
     def register(self, provider):
-        # TODO: Check for duplicates
-        # TODO: Support unregistering provider?
+        """
+        This method atomically registers a provider, and extends the graph to
+        include it. Once registered, its features will be immediately available
+        to all evaluations.
+        """
         # TODO: Enforce that measures and dimensions share same namespace, and never conflict with stat types
+        # TODO: Ensure no contradictory key types (e.g. Two identifiers primary on one table and not both primary on a secondary table)
+        if provider.name in self._providers:
+            raise ValueError("A MeasureProvider named '{}' has already been registered.".format(provider.name))
         self._providers[provider.name] = provider
 
-        for identifier in provider.identifiers:
-            self._register_identifier(identifier)
+        cache = self._cache.copy()
+        cache.register(provider)
+        # Committing cache
+        self._cache = cache
 
-            for unit_type in provider.identifiers:
-                self._register_foreign_key(identifier, unit_type)
+    def unregister(self, provider_name):
+        provider = self._providers.pop(provider_name)
+        self._cache_refresh()
+        return provider
 
-            for dimension in provider.dimensions_for_unit(identifier):
-                self._register_dimension(identifier, dimension)
+    @property
+    def unit_types(self):
+        return set(self._cache.identifiers.keys())
 
-            for measure in provider.measures_for_unit(identifier):
-                self._register_measure(identifier, measure)
-
-    def _register_identifier(self, unit_type):
-        self.__registry_append(self._identifiers, [unit_type], unit_type)
-
-    def _register_foreign_key(self, unit_type, foreign_key):
-        self.__registry_append(self._foreign_keys, [unit_type, foreign_key], foreign_key)
-
-    def _register_dimension(self, unit_type, dimension):
-        self.__registry_append(self._dimensions, [unit_type, dimension], dimension)
-
-    def _register_measure(self, unit_type, measure):
-        self.__registry_append(self._measures, [unit_type, measure], measure)
-
-    def __registry_extract(self, store, keys):
-        for i, key in enumerate(keys):
-            if key not in store:
-                return []
-            store = store[key]
-        assert isinstance(store, list)
-        return store
-
-    def __registry_append(self, store, keys, value):
-        for i, key in enumerate(keys):
-            if key not in store:
-                if i == len(keys) - 1:
-                    store[key] = []
-                else:
-                    store[key] = {}
-            store = store[key]
-        assert isinstance(store, list)
-        if len(store) > 0:
-            assert value.shared and all([d.shared for d in store]), "Attempted to add duplicate non-shared dimension '{}'.".format(value)
-        store.append(value)
-
-    def dimensions(self, unit_type):
+    def dimensions_for_unit(self, unit_type):
         dims = set()
-        for avail_unit_type in self._dimensions:
+        for avail_unit_type in self._cache.dimensions:
             if avail_unit_type.matches(unit_type):
-                dims.update([v[0] for v in self._dimensions[avail_unit_type].values()])
+                dims.update([v[0] for v in self._cache.dimensions[avail_unit_type].values()])
         return dims
 
-    def measures(self, unit_type):
+    def measures_for_unit(self, unit_type):
         ms = set()
-        for avail_unit_type in self._measures:
+        for avail_unit_type in self._cache.measures:
             if avail_unit_type.matches(unit_type):
-                ms.update([v[0] for v in self._measures[avail_unit_type].values()])
+                ms.update([v[0] for v in self._cache.measures[avail_unit_type].values()])
         return ms
 
-    def foreign_keys(self, unit_type):
+    def foreign_keys_for_unit(self, unit_type):
         fks = set()
-        for avail_unit_type in self._foreign_keys:
+        for avail_unit_type in self._cache.foreign_keys:
             if avail_unit_type.matches(unit_type):
-                fks.update([v[0] for v in self._foreign_keys[avail_unit_type].values()])
+                fks.update([v[0] for v in self._cache.foreign_keys[avail_unit_type].values()])
+        return fks
+
+    def reverse_foreign_keys_for_unit(self, unit_type):
+        fks = set()
+        for avail_unit_type in self._cache.reverse_foreign_keys:
+            if avail_unit_type.matches(unit_type):
+                fks.update([v[0] for v in self._cache.reverse_foreign_keys[avail_unit_type].values()])
         return fks
 
     def _resolve_identifier(self, unit_type):
-        return self._identifiers[unit_type][0]  # TODO: Use below mechanism?
+        return self._cache.identifiers[unit_type][0]  # TODO: Use below mechanism?
 
     def __resolve_dimension(self, unit_type, dimension, kind='dimension', dimension_index=None):
-        # Look for dimension starting from most specific unit key with specificity
-        # less than or equal to provided unit_type. Unit_type name length
-        # is a good proxy for this.
+        """
+        This is an internal method that traverses the `GraphCache` in order to
+        resolve a particular measure/dimension/identifier for a specified
+        unit_type and path through the graph.
+
+        Parameters:
+            unit_type (str, _StatisticalUnitIdentifier): The unit type for which
+                to resolve a nominated dimension.
+            dimension (str): The dimension/measure to resolved. Note that
+                dimensions cannot be transitive at this level in the
+                mensor platform.+
+            kind (str): The kind of feature to resolve (one of: 'dimension',
+                'measure', 'foreign_key' or 'reverse_foreign_key')
+            dimension_index (dict): Override for standard kind-detected cache
+                index.
+
+        Returns:
+            _ResolvedDimension: The resolved feature, with information about
+                provider and required joins.
+        """
+        # TODO: Actually apply checks.
         unit_type = self._resolve_identifier(unit_type)
-        dimension_index = dimension_index or getattr(self, '_' + kind + 's', {})
+        dimension_index = dimension_index or getattr(self._cache, kind + 's', {})
         via = unit_type.name
         dimensions = None
 
+        private = external = False
+
+        if isinstance(dimension, (_ResolvedDimension, _Dimension)):
+            private = dimension.private
+            external = dimension.external
+
+        if isinstance(dimension, _ResolvedDimension):
+            dimension = dimension.name
+
         if isinstance(dimension, str):
             s = dimension.split('/')
+            # assert len(s) == 1, '/'.join([str(unit_type), str(dimension)])
             if len(s) > 1 and s[0] == unit_type.name:  # Remove reference to current unit_type
                 raise RuntimeError("Self-referencing foreign_key.")
             via_suffix = '/'.join(s[:-1])
@@ -445,6 +214,10 @@ class MeasureRegistry(object):
             if via_suffix:
                 unit_type = self._resolve_identifier(s[-2])
                 via += '/' + via_suffix
+
+            # Look for dimension starting from most specific unit key with specificity
+            # less than or equal to provided unit_type. Unit_type name length
+            # is a good proxy for this.
             for avail_unit_type in sorted(dimension_index, key=lambda x: len(x.name), reverse=True):
                 if avail_unit_type.matches(unit_type) and dimension in dimension_index[avail_unit_type]:
                     dimensions = dimension_index[avail_unit_type][dimension]
@@ -455,21 +228,27 @@ class MeasureRegistry(object):
         elif isinstance(dimension, _Dimension):
             dimensions = [dimension]
 
-        elif isinstance(dimension, _ResolvedDimension):
-            return dimension
-
         if not isinstance(dimensions, list) and all(isinstance(d, _Dimension) for d in dimensions):
             raise ValueError("Invalid type for {}: `{}`".format(kind, dimension.__class__))
 
-        if kind in ('dimension', 'foreign_key'):
-            return _ResolvedDimension(dimension.name if isinstance(dimension, _Dimension) else dimension, via, providers=[d.provider for d in dimensions])
+        if kind in ('dimension', 'foreign_key', 'reverse_foreign_key'):
+            r = _ResolvedDimension(dimension.name if isinstance(dimension, _Dimension) else dimension, via, providers=[d.provider for d in dimensions])
         elif kind == 'measure':
-            return _ResolvedMeasure(dimension.name if isinstance(dimension, _Dimension) else dimension, via, providers=[d.provider for d in dimensions])
+            r = _ResolvedMeasure(dimension.name if isinstance(dimension, _Dimension) else dimension, via, providers=[d.provider for d in dimensions])
         else:
             raise RuntimeError("SHOULD NOT BE POSSIBLE. Invalid kind '{}'.".format(kind))
 
+        if external:
+            r = r.as_external
+        if private:
+            r = r.as_private
+        return r
+
     def _resolve_foreign_key(self, unit_type, foreign_type):
         return self.__resolve_dimension(unit_type, foreign_type, kind='foreign_key')
+
+    def _resolve_reverse_foreign_key(self, unit_type, foreign_type):
+        return self.__resolve_dimension(unit_type, foreign_type, kind='reverse_foreign_key')
 
     def _resolve_measure(self, unit_type, measure):
         return self.__resolve_dimension(unit_type, measure, kind='measure')
@@ -477,15 +256,15 @@ class MeasureRegistry(object):
     def _resolve_dimension(self, unit_type, dimension):
         try:
             return self.__resolve_dimension(unit_type, dimension, kind='dimension')
-        except:
+        except ValueError:
             pass
         try:
             return self._resolve_measure(unit_type, dimension)
-        except:
+        except ValueError:
             pass
         try:
             return self._resolve_foreign_key(unit_type, dimension)
-        except:
+        except ValueError:
             pass
         raise ValueError("No such dimension {} for unit type '{}'".format(dimension, unit_type))
 
@@ -504,7 +283,7 @@ class MeasureRegistry(object):
             if primary:
                 # Try to extract primary provider from used providers, or locate
                 # one in the unit_type registry.
-                for p, _ in provider_count.most_common() + [(ut.provider, 0) for ut in self._identifiers[unit_type.name] if ut.is_primary]:
+                for p, _ in provider_count.most_common() + [(ut.provider, 0) for ut in self._cache.identifiers[unit_type.name] if ut.is_primary]:
                     if p.identifier_for_unit(unit_type).is_primary:
                         provider = p
                         break
@@ -534,22 +313,24 @@ class MeasureRegistry(object):
         return EvaluationStrategy.from_spec(self, unit_type, measures, where=where, segment_by=segment_by, **opts)
 
     def show(self, *unit_types):
-        unit_types = [self._resolve_identifier(ut) for ut in unit_types] if len(unit_types) > 0 else sorted(self._identifiers)
+        unit_types = [self._resolve_identifier(ut) for ut in unit_types] if len(unit_types) > 0 else sorted(self.unit_types)
         for unit_type in unit_types:
             print("{}:".format(unit_type.name))
-            if self.foreign_keys(unit_type):
+            if self.foreign_keys_for_unit(unit_type):
                 print("\tForeign Keys:")
-                for foreign_key in sorted(self.foreign_keys(unit_type)):
+                for foreign_key in sorted(self.foreign_keys_for_unit(unit_type)):
                     if foreign_key != unit_type:
                         print("\t\t{}::{}: {}".format(foreign_key.provider.name, foreign_key.name, foreign_key.desc or "No description."))
-            if self.dimensions(unit_type):
+            if self.reverse_foreign_keys_for_unit(unit_type):
+                print("\tReverse Foreign Keys:")
+                for foreign_key in sorted(self.reverse_foreign_keys_for_unit(unit_type)):
+                    if foreign_key != unit_type:
+                        print("\t\t{}::{}: {}".format(foreign_key.provider.name, foreign_key.name, foreign_key.desc or "No description."))
+            if self.dimensions_for_unit(unit_type):
                 print("\tDimensions:")
-                for measure in sorted(self.dimensions(unit_type)):
+                for measure in sorted(self.dimensions_for_unit(unit_type)):
                     print("\t\t{}::{}: {}".format(measure.provider.name, measure.name, measure.desc or "No description."))
-            if self.measures(unit_type):
+            if self.measures_for_unit(unit_type):
                 print("\tMeasures:")
-                for measure in sorted(self.measures(unit_type)):
+                for measure in sorted(self.measures_for_unit(unit_type)):
                     print("\t\t{}::{}: {}".format(measure.provider.name, measure.name, measure.desc or "No description."))
-
-        # TODO: deduplicate providers to ensure actions are as optimal as possible
-        # TODO: split into multiple actions depending on whether measures are in same provider
