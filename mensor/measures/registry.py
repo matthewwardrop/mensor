@@ -335,7 +335,7 @@ class MeasureRegistry(object):
 
         return provisions
 
-    def evaluate(self, unit_type, measures, segment_by=None, where=None, dry_run=False, **opts):
+    def evaluate(self, unit_type, measures=None, segment_by=None, where=None, dry_run=False, **opts):
         strategy = EvaluationStrategy.from_spec(
             self, unit_type, measures, where=where, segment_by=segment_by, **opts
         )
