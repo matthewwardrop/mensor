@@ -2,7 +2,8 @@ import pandas as pd
 import os
 import numpy as np
 
-with open(os.path.join(os.path.dirname(__file__), 'names.csv')) as f:
+data_dir = os.path.dirname(__file__)
+with open(os.path.join(data_dir, 'names.csv')) as f:
     names = [name[:-1] for name in f.readlines()]
 
 N = 1000
@@ -15,7 +16,7 @@ people = pd.DataFrame({
     'id_country': np.random.randint(1000, size=1000)
 }).reset_index().rename(columns={'index': 'id'})
 
-people.to_csv('people.csv', index=False)
+people.to_csv(os.path.join(data_dir, 'people.csv'), index=False)
 
 # Generate Transactions
 transactions = pd.DataFrame({
@@ -24,4 +25,4 @@ transactions = pd.DataFrame({
     'value': np.random.randint(1000, size=2 * N),
 }).reset_index().rename(columns={'index': 'id'})
 
-transactions.to_csv('transactions.csv', index=False)
+transactions.to_csv(os.path.join(data_dir, 'transactions.csv'), index=False)
