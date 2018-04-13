@@ -1,18 +1,17 @@
 language: python
 python:
-  - "2.7"
-  - "3.5"
+#  - "2.7"
+  - "3.6"
 
 before_install:
-  - pip install pycodestyle nose wheel
+  - pip install pycodestyle wheel
 
 install:
-  - pip install .
+  - pip install tox-travis
 
 script:
   - "pycodestyle --ignore=E501,E712,E722,W503,W601 ."
-#  - "nosetests --with-coverage --cover-package=mensor"  # No tests yet!
-  - "python -c 'import mensor'"  # In lieu of tests, just import mensor.
+  - "tox"
 
 # Deploy to pypi automatically from tagged releases on the stable branch
 deploy:
@@ -25,6 +24,6 @@ FTuqK662dyTovnY4NOEFSLqyJtZ62v5iYPNr7Dhg64CilCbVyBQQhkcJmWlhC2e6gJK0v4FPf0jKIp+X
 TgMwZjgIZYAiMyCZnJqq6q0vR6KulG6FpB1iE="
   on:
     tags: true
-    python: "3.5"
+    python: "3.6"
     distributions: sdist bdist_wheel
     repo: airbnb/mensor
