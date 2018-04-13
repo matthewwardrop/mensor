@@ -277,5 +277,3 @@ class EvaluationContext(object):
         elif self.scoped_constraints is not None:
             resolvables.append(self.scoped_constraints)
         return resolvables
-
-EvaluationContext.from_spec(['user:guest/country="AU"', '*/ds="2017-06-06"'])
