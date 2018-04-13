@@ -75,7 +75,7 @@ class EvaluationStrategy(object):
                 return 'inner'
         return 'left'
 
-    def run(self, ir_only=False, as_join=False, compatible=False, via=None):
+    def execute(self, ir_only=False, as_join=False, compatible=False, via=None):
         # Step 1: Build joins
         joins = []
         if via is None:
@@ -83,7 +83,7 @@ class EvaluationStrategy(object):
         via += (self.unit_type.name,)
 
         for join in self.join:
-            joins.append(join.run(
+            joins.append(join.execute(
                 as_join=True,
                 compatible=join.provider._is_compatible_with(self.provider),
                 via=via
@@ -146,10 +146,12 @@ class EvaluationStrategy(object):
             return evaluated
 
     @classmethod
-    def from_spec(cls, registry, unit_type, measures, segment_by=None, where=None, **opts):
+    def from_spec(cls, registry, unit_type, measures=None, segment_by=None, where=None, **opts):
 
         # Step 0: Resolve applicable measures and dimensions
         unit_type = registry._resolve_identifier(unit_type)
+        measures = [] if measures is None else measures
+        segment_by = [] if segment_by is None else segment_by
 
         measures = [
             registry._resolve_measure(unit_type, measure) for measure in measures

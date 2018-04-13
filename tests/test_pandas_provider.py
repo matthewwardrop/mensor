@@ -39,14 +39,12 @@ class PandasMeasureProviderTests(unittest.TestCase):
         self.registry.show()
 
     def test_simple(self):
-        strategy = self.registry.evaluate(
+        df = self.registry.evaluate(
             'transaction',
             measures=['person:seller/age'],
             segment_by=['person:buyer/name'],
             where=None
         )
-
-        df = strategy.run()
 
         self.assertGreater(len(df), 0)
         self.assertTrue(

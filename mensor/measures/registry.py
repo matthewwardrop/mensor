@@ -335,8 +335,13 @@ class MeasureRegistry(object):
 
         return provisions
 
-    def evaluate(self, unit_type, measures, segment_by=None, where=None, **opts):
-        return EvaluationStrategy.from_spec(self, unit_type, measures, where=where, segment_by=segment_by, **opts)
+    def evaluate(self, unit_type, measures, segment_by=None, where=None, dry_run=False, **opts):
+        strategy = EvaluationStrategy.from_spec(
+            self, unit_type, measures, where=where, segment_by=segment_by, **opts
+        )
+        if dry_run:
+            return strategy
+        return strategy.execute()
 
     def show(self, *unit_types):
         unit_types = [self._resolve_identifier(ut) for ut in unit_types] if len(unit_types) > 0 else sorted(self.unit_types)
