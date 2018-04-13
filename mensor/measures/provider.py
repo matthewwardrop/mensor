@@ -254,15 +254,10 @@ class MeasureProvider(object):
         # TODO: Enforce that all arguments have the correct types, to simplify
         # subclasses work
 
-        joins = []
-        post_joins = []
+        joins = [j for j in join if j.compatible]
+        post_joins = [j for j in join if not j.compatible]
 
-        for j in join:
-            if j.compatible:
-                joins.append(j)
-            else:
-                post_joins.append(j)
-
+        # Evaluate the requested measures from this MeasureProvider
         result = MeasureDataFrame(
             self._evaluate(
                 unit_type,
@@ -273,7 +268,7 @@ class MeasureProvider(object):
             )
         )
 
-        # Join in precomputed
+        # Join in precomputed incompatible joins
         if len(post_joins) > 0:
             for join in post_joins:
                 result = result.merge(
