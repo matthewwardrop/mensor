@@ -13,9 +13,11 @@ __all__ = ['Join', '_Dimension', '_StatisticalUnitIdentifier', '_Measure', 'Meas
 
 class Join(object):
 
-    def __init__(self, provider, unit_type, object, compatible=False, how='left'):
+    def __init__(self, provider, unit_type, left_on, right_on, object, compatible=False, how='left'):
         self.provider = provider
         self.unit_type = unit_type
+        self.left_on = left_on
+        self.right_on = right_on
         self.object = object
         self.compatible = compatible
         self.how = how
@@ -121,16 +123,21 @@ class _StatisticalUnitIdentifier(_Dimension):
             prefix = '*'
         return prefix + _Dimension.__repr__(self)
 
-    def matches(self, unit_type):
+    def matches(self, unit_type, reverse=False):
         '''
         Checks to see whether unit_type is at least as specific as this identifier.
         For example:
         'user'.matches('user:guest') == True
         'user:guest'.matches('user:guest') == True
         'user:guest'.matches('user') == False
+
+        If `reverse`, then checks to see whether this unit type is at least as
+        specific as `unit_type`.
         '''
         if isinstance(unit_type, _StatisticalUnitIdentifier):
             unit_type = unit_type.name
+        if reverse:
+            return startseq_match(unit_type.split(':'), self.name.split(':'))
         return startseq_match(self.name.split(':'), unit_type.split(':'))
 
 

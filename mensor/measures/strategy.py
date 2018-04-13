@@ -6,7 +6,8 @@ from .types import Join, DimensionBundle
 
 class EvaluationStrategy(object):
 
-    def __init__(self, registry, provider, unit_type, measures, segment_by=None, where=None, join=None, **opts):
+    def __init__(self, registry, provider, unit_type, measures, segment_by=None,
+                 where=None, join=None, join_on_left=None, join_on_right=None, **opts):
         self.registry = registry
         self.provider = provider
         self.unit_type = unit_type
@@ -14,7 +15,15 @@ class EvaluationStrategy(object):
         self.where = where or []
         self.segment_by = segment_by or []
         self.join = join or []
+        self.join_on_left = join_on_left or self.unit_type.name
+        self.join_on_right = join_on_right or self.matched_unit_type.name
         self.opts = opts
+
+    @property
+    def matched_unit_type(self):
+        for identifier in sorted(self.provider.identifiers, key=lambda x: len(x.name)):
+            if identifier.matches(self.unit_type):
+                return identifier
 
     def __repr__(self):
         class StrategyEncoder(json.JSONEncoder):
@@ -27,6 +36,8 @@ class EvaluationStrategy(object):
                         'where': o.where,
                         'segment_by': o.segment_by,
                         'join': o.join,
+                        'join_on_left': o.join_on_left,
+                        'join_on_right': o.join_on_right,
                         'join_type': o.join_type
                     }
                 return str(o)
@@ -84,6 +95,8 @@ class EvaluationStrategy(object):
                 return Join(
                     provider=self.provider,
                     unit_type=self.unit_type,
+                    left_on=self.join_on_left,
+                    right_on=self.join_on_right,
                     object=self.provider.get_ir(
                         unit_type=self.unit_type,
                         measures=self.measures,
@@ -124,8 +137,10 @@ class EvaluationStrategy(object):
                 return Join(
                     provider=self.provider,
                     unit_type=self.unit_type,
-                    object=evaluated,
+                    left_on=self.join_on_left,
+                    right_on='{}/{}'.format(self.unit_type.name, self.join_on_right),
                     how=self.join_type,
+                    object=evaluated,
                     compatible=False
                 )
             return evaluated

@@ -276,16 +276,24 @@ class MeasureProvider(object):
         # Join in precomputed
         if len(post_joins) > 0:
             for join in post_joins:
-                result = (
-                    result
-                    .merge(join.object, on=join.unit_type.name, how=join.how)
-                    .drop([d for d in segment_by if d.private], axis=1)
-                    .groupby(
-                        [x.via_name for x in segment_by if not x.private]
-                    )
-                    .sum()
-                    .reset_index()
+                result = result.merge(
+                    join.object,
+                    left_on=join.left_on,
+                    right_on=join.right_on,
+                    how=join.how
+                ).drop(join.right_on, axis=1)
+
+        # Resegment after deleting private dimensions as necessary
+        if len(set(d.name for d in segment_by if d.private).intersection(result.columns)) > 0:
+            result = (
+                result
+                .drop([d.name for d in segment_by if d.private], axis=1)
+                .groupby(
+                    [x.via_name for x in segment_by if not x.private]
                 )
+                .sum()
+                .reset_index()
+            )
 
         return MeasureDataFrame(result)
 
