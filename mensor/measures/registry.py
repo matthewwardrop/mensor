@@ -68,8 +68,6 @@ class MeasureRegistry(object):
             self._append(self.identifiers, [unit_type], unit_type)
 
         def register_foreign_key(self, unit_type, foreign_key):
-            if unit_type == foreign_key:
-                return
             if unit_type.is_unique:
                 self._append(self.foreign_keys, [unit_type, foreign_key], foreign_key)
             elif foreign_key.is_unique:
