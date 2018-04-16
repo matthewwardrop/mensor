@@ -291,12 +291,12 @@ class MeasureProvider(object):
         # All new joined in measures need to be multiplied by the count series of
         # this dataframe, so that they are properly weighted.
         if len(joined_measures) > 0:
-            result = result.apply(lambda col: result['count:count'] * col if col.name in joined_measures else col, axis=0)
+            result = result.apply(lambda col: result['count|count'] * col if col.name in joined_measures else col, axis=0)
 
         # Remove the private 'count:count' measure.
         # TODO: Make this more general just in case other measures are private for some reason
         if 'count' in measures and measures['count'].private:
-            result = result.drop('count:count', axis=1)
+            result = result.drop('count|count', axis=1)
 
         # Resegment after deleting private dimensions as necessary
         if len(set(d.name for d in segment_by if d.private).intersection(result.columns)) > 0:

@@ -35,11 +35,11 @@ class PandasMeasureProvider(MeasureProvider):
                 if measure.external:
                     continue
                 if measure.measure_agg == 'normal':
-                    d[measure.name + ':norm:sum'] = measure_map(measure.name, lambda x: x)
-                    d[measure.name + ':norm:sos'] = measure_map(measure.name, lambda x: x**2)
-                    d[measure.name + ':norm:count'] = measure_map(measure.name, lambda x: 1 * x.notnull())
+                    d[measure.name + '|norm|sum'] = measure_map(measure.name, lambda x: x)
+                    d[measure.name + '|norm|sos'] = measure_map(measure.name, lambda x: x**2)
+                    d[measure.name + '|norm|count'] = measure_map(measure.name, lambda x: 1 * x.notnull())
                 elif measure.measure_agg == 'count':
-                    d[measure.name + ':count'] = measure_map(measure.name, lambda x: x)
+                    d[measure.name + '|count'] = measure_map(measure.name, lambda x: x)
                 else:
                     raise ValueError("Measure agg {} not recognised.".format(measure.measure_agg))
             return d
