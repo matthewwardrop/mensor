@@ -4,10 +4,11 @@
 #
 # TODO: metrics.measures.booking_value.evaluate(segment_by='test')
 
+import pandas as pd
 import six
 
 from ..utils import AttrDict
-from .types import _Dimension, _Measure, _StatisticalUnitIdentifier, Join, MeasureDataFrame
+from .types import _Dimension, _Measure, _StatisticalUnitIdentifier, Join, MeasureDataFrame, MeasureSeries
 
 __all__ = ['MeasureProvider']
 
@@ -264,14 +265,12 @@ class MeasureProvider(object):
             measures[count_measure] = count_measure
 
         # Evaluate the requested measures from this MeasureProvider
-        result = MeasureDataFrame(
-            self._evaluate(
-                unit_type,
-                measures,
-                where=where,
-                segment_by=segment_by,
-                join=joins, **opts
-            )
+        result = self._evaluate(
+            unit_type,
+            measures,
+            where=where,
+            segment_by=segment_by,
+            join=joins, **opts
         )
 
         # Join in precomputed incompatible joins
@@ -299,7 +298,7 @@ class MeasureProvider(object):
             result = result.drop('count|count', axis=1)
 
         # Resegment after deleting private dimensions as necessary
-        if len(set(d.name for d in segment_by if d.private).intersection(result.columns)) > 0:
+        if isinstance(result, pd.DataFrame) and len(set(d.name for d in segment_by if d.private).intersection(result.columns)) > 0:
             result = (
                 result
                 .drop([d.name for d in segment_by if d.private], axis=1)
@@ -310,6 +309,8 @@ class MeasureProvider(object):
             else:
                 result = result.sum()
 
+        if isinstance(result, pd.Series):
+            return MeasureSeries(result)
         return MeasureDataFrame(result)
 
     def _evaluate(self, unit_type, measures=None, segment_by=None, where=None, join=None, **opts):
