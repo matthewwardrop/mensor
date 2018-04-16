@@ -257,6 +257,12 @@ class MeasureProvider(object):
         joins = [j for j in join if j.compatible]
         post_joins = [j for j in join if not j.compatible]
 
+        # If there are post-joins, we will need to add the 'count' measure
+        # (assuming it has not already been requested).
+        if len(post_joins) > 0 and 'count' not in measures:
+            count_measure = self.measures['count'].as_private
+            measures[count_measure] = count_measure
+
         # Evaluate the requested measures from this MeasureProvider
         result = MeasureDataFrame(
             self._evaluate(
@@ -269,26 +275,40 @@ class MeasureProvider(object):
         )
 
         # Join in precomputed incompatible joins
+        # TODO: Clean-up how joined measures are detected
+        joined_measures = set()
         if len(post_joins) > 0:
             for join in post_joins:
+                joined_measures.update(join.object.columns)
                 result = result.merge(
                     join.object,
                     left_on=join.left_on,
                     right_on=join.right_on,
                     how=join.how
                 ).drop(join.right_on, axis=1)
+        joined_measures.difference(segment_by)
+
+        # All new joined in measures need to be multiplied by the count series of
+        # this dataframe, so that they are properly weighted.
+        if len(joined_measures) > 0:
+            result = result.apply(lambda col: result['count:count'] * col if col.name in joined_measures else col, axis=0)
+
+        # Remove the private 'count:count' measure.
+        # TODO: Make this more general just in case other measures are private for some reason
+        if 'count' in measures and measures['count'].private:
+            result = result.drop('count:count', axis=1)
 
         # Resegment after deleting private dimensions as necessary
         if len(set(d.name for d in segment_by if d.private).intersection(result.columns)) > 0:
             result = (
                 result
                 .drop([d.name for d in segment_by if d.private], axis=1)
-                .groupby(
-                    [x.via_name for x in segment_by if not x.private]
-                )
-                .sum()
-                .reset_index()
             )
+            segment_by = [x.via_name for x in segment_by if not x.private]
+            if len(segment_by):
+                result = result.groupby(segment_by).sum().reset_index()
+            else:
+                result = result.sum()
 
         return MeasureDataFrame(result)
 
