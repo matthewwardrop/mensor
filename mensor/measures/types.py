@@ -2,8 +2,9 @@ from collections import namedtuple
 import copy
 import numpy as np
 import pandas as pd
+import re
 import six
-from pandas import Series
+from uncertainties import ufloat
 from uncertainties.unumpy import uarray
 
 from ..utils import startseq_match
@@ -47,6 +48,16 @@ class _Dimension(object):
         self.external = external
         self.private = private
         self.via = via
+
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, name):
+        if not re.match(r'^(?![0-9])[\w_:]+$', name):
+            raise ValueError("Invalid dimension name. All names must consist only of word characters, numbers, underscores and colons, and cannot start with a number.")
+        self._name = name
 
     def __repr__(self):
         attrs = (['e'] if self.external else []) + (['p'] if self.private else [])
@@ -165,6 +176,18 @@ class MeasureDataFrame(pd.DataFrame):
     def _constructor_sliced(self):
         return pd.Series
 
+    @property
+    def measure_fields(self):
+        return [col for col in self.columns if '|' in col]
+
+    @property
+    def measures(self):
+        return list(set(field.split('|')[0] for field in self.measure_fields))
+
+    @property
+    def dimensions(self):
+        return [col for col in self.columns if '|' not in col]
+
     # Allow getting measures by distribution stats
     def __getitem__(self, name):
         try:
@@ -175,7 +198,74 @@ class MeasureDataFrame(pd.DataFrame):
                     mean = self['{}|norm|sum'.format(name)] / self['{}|norm|count'.format(name)]
                     var = (self['{}|norm|sos'.format(name)] - self['{}|norm|sum'.format(name)]**2 / self['{}|norm|count'.format(name)]) / (self['{}|norm|count'.format(name)] - 1)
                     return pd.Series(uarray(mean, np.sqrt(var)), name=name, index=self.index)
+                elif '{}|count'.format(name) in self.columns:
+                    return self['{}|count'.format(name)]
             raise e
+
+    def segmentby(self, segment_by=None):
+        segment_by = segment_by or []
+        if len(segment_by):
+            return (
+                self
+                .groupby(segment_by)
+                [self.measure_fields]
+                .sum()
+            )
+        return self[self.measure_fields].sum()
+
+    @property
+    def as_measures(self):
+        return pd.DataFrame().assign(
+            **{dimension: self[dimension] for dimension in self.dimensions},
+            **{measure: self[measure] for measure in self.measures}
+        ).set_index(self.dimensions)
+
+    def _repr_html_(self):
+        return "Use `.as_measures` to get metrics as data frame.<br/>" + pd.DataFrame._repr_html_(self)
+
+    def __repr__(self):
+        return "Use `.as_measures` to get metrics as data frame.\n" + pd.DataFrame.__repr__(self)
+
+    def _reduce(self, *args, **kwargs):
+        out = pd.DataFrame._reduce(self, *args, **kwargs)
+        if isinstance(out, pd.Series):
+            return MeasureSeries(out)
+        return out
+
+
+class MeasureSeries(pd.Series):
+
+    @property
+    def measure_fields(self):
+        return [col for col in self.index if '|' in col]
+
+    @property
+    def measures(self):
+        return list(set(field.split('|')[0] for field in self.measure_fields))
+
+    @property
+    def dimensions(self):
+        return [col for col in self.index if '|' not in col]
+
+    # Allow getting measures by distribution stats
+    def __getitem__(self, name):
+        try:
+            return pd.Series.__getitem__(self, name)
+        except KeyError as e:
+            if '|' not in name:
+                if '{}|norm|sum'.format(name) in self.index:
+                    mean = self['{}|norm|sum'.format(name)] / self['{}|norm|count'.format(name)]
+                    var = (self['{}|norm|sos'.format(name)] - self['{}|norm|sum'.format(name)]**2 / self['{}|norm|count'.format(name)]) / (self['{}|norm|count'.format(name)] - 1)
+                    return ufloat(mean, np.sqrt(var))
+                elif '{}|count'.format(name) in self.index:
+                    return self['{}|count'.format(name)]
+            raise e
+
+    @property
+    def as_measures(self):
+        return pd.Series(
+            {measure: self[measure] for measure in self.measures}
+        )
 
 
 def quantilesofscores(self, as_weights=False, *, pre_sorted=False, sort_fields=None):
@@ -188,7 +278,7 @@ def quantilesofscores(self, as_weights=False, *, pre_sorted=False, sort_fields=N
     return (pd.Series(np.ones(len(s)).cumsum(), index=s.index) / len(s)).reindex(idx)
 
 
-Series.quantilesofscores = quantilesofscores
+pd.Series.quantilesofscores = quantilesofscores
 
 
 class _ResolvedDimension(object):
