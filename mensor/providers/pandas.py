@@ -13,6 +13,8 @@ class PandasMeasureProvider(MeasureProvider):
             data = pd.read_csv(data)
         self.data = data
 
+        self.add_measure('count', measure_agg='count')
+
     def _evaluate(self, unit_type, measures, where=None, segment_by=None, **opts):
         """
         Should return a dataframe satisfying the following properties:
@@ -32,15 +34,21 @@ class PandasMeasureProvider(MeasureProvider):
             for measure in measures:
                 if measure.external:
                     continue
-                d[measure.name + ':norm:sum'] = measure_map(measure.name, lambda x: x)
-                d[measure.name + ':norm:sos'] = measure_map(measure.name, lambda x: x**2)
-                d[measure.name + ':norm:count'] = measure_map(measure.name, lambda x: 1 * x.notnull())
+                if measure.measure_agg == 'normal':
+                    d[measure.name + ':norm:sum'] = measure_map(measure.name, lambda x: x)
+                    d[measure.name + ':norm:sos'] = measure_map(measure.name, lambda x: x**2)
+                    d[measure.name + ':norm:count'] = measure_map(measure.name, lambda x: 1 * x.notnull())
+                elif measure.measure_agg == 'count':
+                    d[measure.name + ':count'] = measure_map(measure.name, lambda x: x)
+                else:
+                    raise ValueError("Measure agg {} not recognised.".format(measure.measure_agg))
             return d
 
         measure_cols = measure_maps(measures)
 
         d = (
             self.data
+            .assign(count=1)
             .rename(
                 columns={identifier.expr: identifier.name for identifier in self.identifiers},
             )

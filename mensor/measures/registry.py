@@ -52,6 +52,16 @@ class MeasureRegistry(object):
             )
 
         def register(self, provider):
+            # TODO: Enforce that measures and dimensions share same namespace, and never conflict with stat types
+            # TODO: Ensure no contradictory key types (e.g. Two identifiers primary on one table and not both primary on a secondary table)
+
+            # Require that each provider have at least one primary key
+            # and a measure "count".
+            if len(list(identifier for identifier in provider.identifiers if identifier.is_primary)) == 0:
+                raise RuntimeError("MeasureProvider '{}' does not have at least one primary identifier.".format(provider))
+            if 'count' not in provider.measures:
+                raise RuntimeError("MeasureProvider '{}' does not provide a 'count' measure.".format(provider))
+
             for identifier in provider.identifiers:
                 self.register_identifier(identifier)
 
@@ -115,8 +125,6 @@ class MeasureRegistry(object):
         include it. Once registered, its features will be immediately available
         to all evaluations.
         """
-        # TODO: Enforce that measures and dimensions share same namespace, and never conflict with stat types
-        # TODO: Ensure no contradictory key types (e.g. Two identifiers primary on one table and not both primary on a secondary table)
         if provider.name in self._providers:
             raise ValueError("A MeasureProvider named '{}' has already been registered.".format(provider.name))
         self._providers[provider.name] = provider
