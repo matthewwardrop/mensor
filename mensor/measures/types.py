@@ -170,10 +170,10 @@ class MeasureDataFrame(pd.DataFrame):
         try:
             return pd.DataFrame.__getitem__(self, name)
         except KeyError as e:
-            if ':' not in name:
-                if '{}:norm:sum'.format(name) in self.columns:
-                    mean = self['{}:norm:sum'.format(name)] / self['{}:norm:count'.format(name)]
-                    var = (self['{}:norm:sos'.format(name)] - self['{}:norm:sum'.format(name)]**2 / self['{}:norm:count'.format(name)]) / (self['{}:norm:count'.format(name)] - 1)
+            if '|' not in name:
+                if '{}|norm|sum'.format(name) in self.columns:
+                    mean = self['{}|norm|sum'.format(name)] / self['{}|norm|count'.format(name)]
+                    var = (self['{}|norm|sos'.format(name)] - self['{}|norm|sum'.format(name)]**2 / self['{}|norm|count'.format(name)]) / (self['{}|norm|count'.format(name)] - 1)
                     return pd.Series(uarray(mean, np.sqrt(var)), name=name, index=self.index)
             raise e
 
