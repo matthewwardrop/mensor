@@ -214,7 +214,7 @@ class MeasureDataFrame(pd.DataFrame):
             if '|' not in name:
                 if '{}|norm|sum'.format(name) in self.columns:
                     mean = self['{}|norm|sum'.format(name)] / self['{}|norm|count'.format(name)]
-                    var = (self['{}|norm|sos'.format(name)] - self['{}|norm|sum'.format(name)]**2 / self['{}|norm|count'.format(name)]) / (self['{}|norm|count'.format(name)] - 1)
+                    var = (self['{}|norm|sos'.format(name)] - self['{}|norm|sum'.format(name)]**2 / self['{}|norm|count'.format(name)]) / (self['{}|norm|count'.format(name)] - 1) / self['{}|norm|count'.format(name)]
                     return pd.Series(uarray(mean, np.sqrt(var)), name=name, index=self.index)
                 elif '{}|count'.format(name) in self.columns:
                     return self['{}|count'.format(name)]
@@ -276,7 +276,7 @@ class MeasureSeries(pd.Series):
             if '|' not in name:
                 if '{}|norm|sum'.format(name) in self.index:
                     mean = self['{}|norm|sum'.format(name)] / self['{}|norm|count'.format(name)]
-                    var = (self['{}|norm|sos'.format(name)] - self['{}|norm|sum'.format(name)]**2 / self['{}|norm|count'.format(name)]) / (self['{}|norm|count'.format(name)] - 1)
+                    var = (self['{}|norm|sos'.format(name)] - self['{}|norm|sum'.format(name)]**2 / self['{}|norm|count'.format(name)]) / (self['{}|norm|count'.format(name)] - 1) / self['{}|norm|count'.format(name)]
                     return ufloat(mean, np.sqrt(var))
                 elif '{}|count'.format(name) in self.index:
                     return self['{}|count'.format(name)]
