@@ -64,9 +64,12 @@ class SQLMeasureProvider(MeasureProvider):
         return self._sql
 
     def _get_measures_sql(self, measures, join):
-        aggs = ['SUM(1) AS "count|count"']
+        aggs = []
 
         for measure in measures:
+            if measure == 'count':
+                aggs.append('SUM(1) AS "count|count"')
+                continue
             if not measure.external and measure != "count":
                 if measure.measure_agg == 'normal':
                     agg = ['SUM(base_query."{m}") AS "{o}|norm|sum"',
