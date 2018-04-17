@@ -233,10 +233,13 @@ class MeasureDataFrame(pd.DataFrame):
 
     @property
     def as_measures(self):
-        return pd.DataFrame().assign(
+        measures = pd.DataFrame().assign(
             **{dimension: self[dimension] for dimension in self.dimensions},
             **{measure: self[measure] for measure in self.measures}
-        ).set_index(self.dimensions)
+        )
+        if len(self.dimensions):
+            measures = measures.set_index(self.dimensions)
+        return measures
 
     def _repr_html_(self):
         return "Use `.as_measures` to get metrics as data frame.<br/>" + pd.DataFrame._repr_html_(self)
