@@ -97,6 +97,8 @@ class EvaluationStrategy(object):
                     unit_type=self.unit_type,
                     left_on=self.join_on_left,
                     right_on=self.join_on_right,
+                    measures=self.measures,
+                    dimensions=self.segment_by,
                     object=self.provider.get_ir(
                         unit_type=self.unit_type,
                         measures=self.measures,
@@ -139,6 +141,8 @@ class EvaluationStrategy(object):
                     unit_type=self.unit_type,
                     left_on=self.join_on_left,
                     right_on='{}/{}'.format(self.unit_type.name, self.join_on_right),
+                    measures=self.measures,
+                    dimensions=self.segment_by,
                     how=self.join_type,
                     object=evaluated,
                     compatible=False

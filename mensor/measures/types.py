@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import re
 import six
+import uuid
 from uncertainties import ufloat
 from uncertainties.unumpy import uarray
 
@@ -14,14 +15,31 @@ __all__ = ['Join', '_Dimension', '_StatisticalUnitIdentifier', '_Measure', 'Meas
 
 class Join(object):
 
-    def __init__(self, provider, unit_type, left_on, right_on, object, compatible=False, how='left'):
+    # TODO: Review Join API (esp. which arguments are essential, etc)
+
+    def __init__(self, provider, unit_type, left_on, right_on, object,
+                 compatible=False, name=None, measures=None, dimensions=None,
+                 how='left'):
         self.provider = provider
         self.unit_type = unit_type
         self.left_on = left_on
         self.right_on = right_on
+        self.name = name
+        self.measures = measures
+        self.dimensions = dimensions
         self.object = object
         self.compatible = compatible
         self.how = how
+
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, name):
+        if name is None:
+            name = str(uuid.uuid1())
+        self._name = name
 
 
 class _Dimension(object):
