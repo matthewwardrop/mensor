@@ -247,6 +247,7 @@ class MeasureProvider(object):
             unit_type = self.identifier_for_unit(unit_type)
             measures = {} if measures is None else self.resolve(measures, kind='measure')
             segment_by = {} if segment_by is None else self.resolve(segment_by, kind='dimension')
+            join = join or []
             return f(self, unit_type, measures=measures, segment_by=segment_by, where=where, join=join, **opts)
         return wrapped
 
