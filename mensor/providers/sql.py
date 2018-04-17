@@ -2,7 +2,7 @@ import jinja2
 
 from mensor.measures.provider import MeasureProvider
 
-TEMPLATE_MEASURES = jinja2.Template("""
+TEMPLATE = jinja2.Template("""
 WITH
     base_query AS (
         {{base_sql|indent(width=8)}}
@@ -33,6 +33,20 @@ GROUP BY
 {%- endif %}
 """.strip())
 
+TEMPLATE_TABLE = jinja2.Template("""
+SELECT
+    {%- for identifier in identifiers %}
+    {% if loop.index0 > 0 %}, {% endif %}{{ identifier.expr }}
+    {%- endfor %}
+    {%- for dimension in dimensions %}
+    {% if loop.index0 > 0 or identifiers%}, {% endif %}{{ dimension.expr }}
+    {%- endfor %}
+    {%- for measure in measures %}
+    {% if loop.index0 > 0 or identifiers or dimensions %}, {% endif %}{{ measure.expr }}
+    {%- endfor %}
+FROM {{table}}
+""".strip())
+
 
 class SQLMeasureProvider(MeasureProvider):
 
@@ -40,16 +54,20 @@ class SQLMeasureProvider(MeasureProvider):
         assert db_client is not None, "Must specify an (Omniduct-compatible) database client."
 
         MeasureProvider.__init__(self, *args, **kwargs)
-        self.sql = sql
+        self._sql = sql
         self.db_client = db_client
 
         self.add_measure('count', measure_agg='count')
 
+    @property
+    def sql(self):
+        return self._sql
+
     def _get_measures_sql(self, measures, join):
-        aggs = []
+        aggs = ['SUM(1) AS "count|count"']
 
         for measure in measures:
-            if not measure.external:
+            if not measure.external and measure != "count":
                 if measure.measure_agg == 'normal':
                     agg = ['SUM(base_query."{m}") AS "{o}|norm|sum"',
                            'POWER(SUM(base_query."{m}"), 2) AS "{o}|norm|sos"',
@@ -92,7 +110,7 @@ class SQLMeasureProvider(MeasureProvider):
         return dims
 
     def _get_ir(self, unit_type, measures=None, segment_by=None, where=None, join=None, via=None, **opts):
-        sql = TEMPLATE_MEASURES.render(
+        sql = TEMPLATE.render(
             base_sql=self.sql,
             provider=self,
             dimensions=self._get_dimensions_sql(segment_by, join),
@@ -114,3 +132,20 @@ class SQLMeasureProvider(MeasureProvider):
             join=join,
             **opts
         ))
+
+
+class SQLTableMeasureProvider(SQLMeasureProvider):
+
+    def __init__(self, *args, **kwargs):
+        SQLMeasureProvider.__init__(self, *args, **kwargs)
+
+    @property
+    def sql(self):
+        if len(self.identifiers) + len(self.dimensions) + len(self.measures) == 0:
+            raise RuntimeError("No columns identified in table.")
+        return TEMPLATE_TABLE.render(
+            table=self.name,
+            identifiers=self.identifiers,
+            measures=[m for m in self.measures if m != 'count'],
+            dimensions=self.dimensions
+        )
