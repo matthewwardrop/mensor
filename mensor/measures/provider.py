@@ -243,21 +243,21 @@ class MeasureProvider(object):
 
     # Measure evaluation
     def _prepare_evaluation_args(f):
-        def wrapped(self, unit_type, measures=None, segment_by=None, where=None, join=None, **opts):
+        def wrapped(self, unit_type, measures=None, segment_by=None, where=None, joins=None, **opts):
             unit_type = self.identifier_for_unit(unit_type)
             measures = {} if measures is None else self.resolve(measures, kind='measure')
             segment_by = {} if segment_by is None else self.resolve(segment_by, kind='dimension')
-            join = join or []
-            return f(self, unit_type, measures=measures, segment_by=segment_by, where=where, join=join, **opts)
+            joins = joins or []
+            return f(self, unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, **opts)
         return wrapped
 
     @_prepare_evaluation_args
-    def evaluate(self, unit_type, measures=None, segment_by=None, where=None, join=None, **opts):
+    def evaluate(self, unit_type, measures=None, segment_by=None, where=None, joins=None, **opts):
         # TODO: Enforce that all arguments have the correct types, to simplify
         # subclasses work
 
-        joins = [j for j in join if j.compatible]
-        post_joins = [j for j in join if not j.compatible]
+        post_joins = [j for j in joins if not j.compatible]
+        joins = [j for j in joins if j.compatible]
 
         # If there are post-joins, we will need to add the 'count' measure
         # (assuming it has not already been requested).
@@ -271,7 +271,7 @@ class MeasureProvider(object):
             measures,
             where=where,
             segment_by=segment_by,
-            join=joins, **opts
+            joins=joins, **opts
         )
 
         # Join in precomputed incompatible joins
@@ -314,25 +314,25 @@ class MeasureProvider(object):
             return MeasureSeries(result)
         return MeasureDataFrame(result)
 
-    def _evaluate(self, unit_type, measures=None, segment_by=None, where=None, join=None, **opts):
+    def _evaluate(self, unit_type, measures=None, segment_by=None, where=None, joins=None, **opts):
         raise NotImplementedError("Generic implementation not implemented.")
 
     @_prepare_evaluation_args
-    def get_ir(self, unit_type, measures=None, segment_by=None, where=None, join=None, via=None, **opts):
+    def get_ir(self, unit_type, measures=None, segment_by=None, where=None, joins=None, via=None, **opts):
         # Get intermediate representation for this evaluation query
-        if not all(isinstance(j, Join) and j.compatible for j in join):
+        if not all(isinstance(j, Join) and j.compatible for j in joins):
             raise RuntimeError("All joins for IR must be compatible with this provider.")
         return self._get_ir(
             unit_type=unit_type,
             measures=measures,
             segment_by=segment_by,
             where=where,
-            join=join,
+            joins=joins,
             via=tuple() if via is None else via,
             **opts
         )
 
-    def _get_ir(self, unit_type, measures=None, segment_by=None, where=None, join=None, via=None, **opts):
+    def _get_ir(self, unit_type, measures=None, segment_by=None, where=None, joins=None, via=None, **opts):
         raise NotImplementedError
 
     def _is_compatible_with(self, *providers):

@@ -63,7 +63,7 @@ class SQLMeasureProvider(MeasureProvider):
     def sql(self):
         return self._sql
 
-    def _get_measures_sql(self, measures, join):
+    def _get_measures_sql(self, measures, joins):
         aggs = []
 
         for measure in measures:
@@ -81,7 +81,7 @@ class SQLMeasureProvider(MeasureProvider):
                 else:
                     raise RuntimeError("Invalid target type: {}".format(measure.measure_agg))
 
-        for j in join:
+        for j in joins:
             for measure in j.measures:
                 if not measure.private:
                     if measure.measure_agg == 'normal':
@@ -97,7 +97,7 @@ class SQLMeasureProvider(MeasureProvider):
 
         return aggs
 
-    def _get_dimensions_sql(self, dimensions, join):
+    def _get_dimensions_sql(self, dimensions, joins):
 
         dims = []
 
@@ -105,20 +105,20 @@ class SQLMeasureProvider(MeasureProvider):
             if not dimension.external:
                 dims.append('base_query."{m}" AS "{o}"'.format(m=dimension.expr, o=dimension.via_name))
 
-        for j in join:
+        for j in joins:
             for dimension in j.dimensions:
                 if not dimension.private and dimension != j.right_on:
                     dims.append('"{n}"."{m}" AS "{o}"'.format(n=j.name, m=dimension.via_name, o=dimensions[dimension].via_name))
 
         return dims
 
-    def _get_ir(self, unit_type, measures=None, segment_by=None, where=None, join=None, via=None, **opts):
+    def _get_ir(self, unit_type, measures=None, segment_by=None, where=None, joins=None, via=None, **opts):
         sql = TEMPLATE.render(
             base_sql=self.sql,
             provider=self,
-            dimensions=self._get_dimensions_sql(segment_by, join),
-            measures=self._get_measures_sql(measures, join),
-            joins=join,
+            dimensions=self._get_dimensions_sql(segment_by, joins),
+            measures=self._get_measures_sql(measures, joins),
+            joins=joins,
             filter=' AND '.join(where) if where else ''
         )
         return sql
@@ -126,13 +126,13 @@ class SQLMeasureProvider(MeasureProvider):
     def get_sql(self, *args, **kwargs):
         return self.get_ir(*args, **kwargs)
 
-    def _evaluate(self, unit_type, measures=None, segment_by=None, where=None, join=None, **opts):
+    def _evaluate(self, unit_type, measures=None, segment_by=None, where=None, joins=None, **opts):
         return self.db_client.query(self.get_sql(
             unit_type,
             measures=measures,
             segment_by=segment_by,
             where=where,
-            join=join,
+            joins=joins,
             **opts
         ))
 
