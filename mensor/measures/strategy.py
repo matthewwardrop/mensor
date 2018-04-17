@@ -7,16 +7,16 @@ from .types import Join, DimensionBundle
 class EvaluationStrategy(object):
 
     def __init__(self, registry, provider, unit_type, measures, segment_by=None,
-                 where=None, join=None, join_on_left=None, join_on_right=None, **opts):
+                 where=None, join_on_left=None, join_on_right=None, joins=None, **opts):
         self.registry = registry
         self.provider = provider
         self.unit_type = unit_type
         self.measures = measures or []
         self.where = where or []
         self.segment_by = segment_by or []
-        self.join = join or []
         self.join_on_left = join_on_left or self.unit_type.name
         self.join_on_right = join_on_right or self.matched_unit_type.name
+        self.joins = joins or []
         self.opts = opts
 
     @property
@@ -35,10 +35,10 @@ class EvaluationStrategy(object):
                         'measures': o.measures,
                         'where': o.where,
                         'segment_by': o.segment_by,
-                        'join': o.join,
                         'join_on_left': o.join_on_left,
                         'join_on_right': o.join_on_right,
-                        'join_type': o.join_type
+                        'join_type': o.join_type,
+                        'joins': o.joins,
                     }
                 return str(o)
         return 'EvaluationStrategy(' + json.dumps(self, indent=4, cls=StrategyEncoder) + ')'
@@ -63,14 +63,14 @@ class EvaluationStrategy(object):
         )
         if unit_type not in strategy.segment_by:
             strategy.segment_by.insert(0, strategy.provider.identifier_for_unit(unit_type.name))
-        self.join.append(strategy)
+        self.joins.append(strategy)
         return self
 
     @property
     def join_type(self):
         if any(not w.scoped for w in self.where):
             return 'inner'
-        for join in self.join:
+        for join in self.joins:
             if join.join_type == 'inner':
                 return 'inner'
         return 'left'
@@ -82,7 +82,7 @@ class EvaluationStrategy(object):
             via = tuple()
         via += (self.unit_type.name,)
 
-        for join in self.join:
+        for join in self.joins:
             joins.append(join.execute(
                 as_join=True,
                 compatible=join.provider._is_compatible_with(self.provider),
@@ -104,7 +104,7 @@ class EvaluationStrategy(object):
                         measures=self.measures,
                         segment_by=self.segment_by,
                         where=self.where,
-                        join=joins,
+                        joins=joins,
                         via=via[1:],
                         **self.opts
                     ),
@@ -120,7 +120,7 @@ class EvaluationStrategy(object):
                 measures=self.measures,
                 segment_by=self.segment_by,
                 where=self.where,
-                join=joins,
+                joins=joins,
                 via=via[1:],
                 **self.opts
             )
@@ -130,7 +130,7 @@ class EvaluationStrategy(object):
                 measures=self.measures,
                 segment_by=self.segment_by,
                 where=self.where,
-                join=joins,
+                joins=joins,
                 **self.opts
             )
 
