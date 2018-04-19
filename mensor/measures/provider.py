@@ -3,12 +3,13 @@
 # TODO: metrics.for_segment(Segment/Target instance).measures.evaluate('bookings/trains')
 #
 # TODO: metrics.measures.booking_value.evaluate(segment_by='test')
+from collections import OrderedDict
 
 import pandas as pd
 import six
 
 from ..utils import AttrDict
-from .types import _Dimension, _Measure, _StatisticalUnitIdentifier, Join, MeasureDataFrame, MeasureSeries
+from .types import _Dimension, _Measure, _StatisticalUnitIdentifier, Join, MeasureDataFrame, MeasureSeries, DISTRIBUTIONS, DISTRIBUTION_FIELDS
 
 __all__ = ['MeasureProvider']
 
@@ -175,8 +176,9 @@ class MeasureProvider(object):
     def measures(self, measures):
         self._measures = self._get_dimensions_from_specs(_Measure, measures)
 
-    def add_measure(self, name=None, expr=None, desc=None, shared=False, unit_agg=None, measure_agg='normal'):
-        measure = _Measure(name, expr=expr, desc=desc, shared=shared, unit_agg=unit_agg, measure_agg=measure_agg, provider=self)
+    def add_measure(self, name=None, expr=None, desc=None, shared=False, unit_agg='sum', distribution='normal'):
+        measure = _Measure(name, expr=expr, desc=desc, shared=shared, unit_agg=unit_agg, distribution=distribution, provider=self)
+        assert measure.unit_agg in self._measure_agg_methods, "This provider does not support aggregating at the unit level using '{}'.".format(measure.measure_agg)
         self._measures[measure] = measure
         return self
 
@@ -193,6 +195,24 @@ class MeasureProvider(object):
 
     def _unit_has_measure(self, unit_type, measure):
         return unit_type.is_primary
+
+    # Measure aggregation methods
+    @property
+    def _measure_agg_methods(self):
+        return {}
+
+    def _measure_agg_method(self, agg_type):
+        return self._measure_agg_methods[agg_type]
+
+    # Measure distribution methods
+    def _get_distribution_fields(self, dist_type):
+        return OrderedDict([
+            (
+                ("|{field_name}" if dist_type == DISTRIBUTIONS.NONE else "|{dist_name}|{field_name}").format(field_name=field_name, dist_name=dist_type.name.lower()),
+                self._measure_agg_method(agg_type)
+            )
+            for field_name, agg_type in DISTRIBUTION_FIELDS[dist_type].items()
+        ])
 
     # Resolution
 

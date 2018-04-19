@@ -1,6 +1,7 @@
 import jinja2
 
 from mensor.measures.provider import MeasureProvider
+from mensor.measures.types import AGG_METHODS
 
 TEMPLATE = jinja2.Template("""
 WITH
@@ -49,6 +50,7 @@ FROM {{table}}
 
 
 class SQLMeasureProvider(MeasureProvider):
+    # TODO: Handle unit-aggregation
 
     def __init__(self, *args, sql=None, db_client=None, **kwargs):
         assert db_client is not None, "Must specify an (Omniduct-compatible) database client."
@@ -57,7 +59,7 @@ class SQLMeasureProvider(MeasureProvider):
         self._sql = sql
         self.db_client = db_client
 
-        self.add_measure('count', measure_agg='count')
+        self.add_measure('count', distribution=None)
 
     @property
     def sql(self):
@@ -135,6 +137,15 @@ class SQLMeasureProvider(MeasureProvider):
             joins=joins,
             **opts
         ))
+
+    @property
+    def _measure_agg_methods(self):
+        return {
+            AGG_METHODS.SUM: lambda x: "SUM({})".format(x),
+            AGG_METHODS.MEAN: lambda x: "AVG({})".format(x),
+            AGG_METHODS.SQUARE_SUM: lambda x: "SUM(POW({}, 2)".format(x),
+            AGG_METHODS.COUNT: lambda x: "COUNT({})".format(x)
+        }
 
 
 class SQLTableMeasureProvider(SQLMeasureProvider):
