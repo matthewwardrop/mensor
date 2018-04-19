@@ -1,10 +1,13 @@
-from collections import namedtuple
 import copy
+import re
+import uuid
+from collections import namedtuple, OrderedDict
+from enum import Enum
+
 import numpy as np
 import pandas as pd
-import re
+import scipy.stats.distributions
 import six
-import uuid
 from uncertainties import ufloat
 from uncertainties.unumpy import uarray
 
@@ -170,6 +173,81 @@ class _StatisticalUnitIdentifier(_Dimension):
         return startseq_match(self.name.split(':'), unit_type.split(':'))
 
 
+class AGG_METHODS(Enum):
+    MEAN = 'mean'
+    SUM = 'sum'
+    SQUARE_SUM = 'sqsum'
+    COUNT = 'count'
+
+
+class MEASURE_AGG_METHODS(Enum):
+    MEAN = 'mean'
+    SUM = 'sum'
+    COUNT = 'count'
+
+
+class DISTRIBUTIONS(Enum):
+    NONE = None
+    NORMAL = 'normal'
+    BINOMIAL = 'binomial'
+
+
+DISTRIBUTION_FIELDS = {
+    DISTRIBUTIONS.NONE: OrderedDict([
+        ('sum', AGG_METHODS.SUM),
+        ('count', AGG_METHODS.COUNT)
+    ]),
+    DISTRIBUTIONS.NORMAL: OrderedDict([
+        ('sum', AGG_METHODS.SUM),
+        ('sos', AGG_METHODS.SQUARE_SUM),
+        ('count', AGG_METHODS.COUNT)
+    ]),
+    DISTRIBUTIONS.BINOMIAL: OrderedDict([
+        ('sum', AGG_METHODS.SUM),
+        ('count', AGG_METHODS.COUNT)
+    ])
+}
+
+DISTRIBUTION_STATS = {
+    DISTRIBUTIONS.NONE: {
+        MEASURE_AGG_METHODS.MEAN: lambda sum, count: sum / count,
+        MEASURE_AGG_METHODS.SUM: lambda sum, count: count
+    },
+    DISTRIBUTIONS.NORMAL: {
+        MEASURE_AGG_METHODS.MEAN: (
+            scipy.stats.distributions.norm,
+            {
+                'loc': lambda sum, sos, count: sum / count,
+                'scale': lambda sum, sos, count: np.sqrt((sos - sum**2 / count) / (count - 1)) / count
+            }
+        ),
+        MEASURE_AGG_METHODS.SUM: (
+            scipy.stats.distributions.norm,
+            {
+                'loc': lambda sum, sos, count: sum,
+                'scale': lambda sum, sos, count: np.sqrt((sos - sum**2 / count) / (count - 1))
+            }
+        )
+    },
+    DISTRIBUTIONS.BINOMIAL: {
+        MEASURE_AGG_METHODS.MEAN: (
+            scipy.stats.distributions.binom,
+            {
+                'n': lambda sum, count: count,
+                'p': lambda sum, count: sum / count
+            }
+        ),
+        MEASURE_AGG_METHODS.MEAN: (
+            scipy.stats.distributions.binom,
+            {
+                'n': lambda sum, count: count,
+                'p': lambda sum, count: sum / count
+            }
+        )
+    }
+}
+
+
 class _Measure(_Dimension):
 
     # TODO: Types of measures
@@ -178,13 +256,18 @@ class _Measure(_Dimension):
     # binomial distribution: <name>:type = 'binomial', <name>:sum, <name>:sample_size
     # other
 
-    def __init__(self, name, expr=None, desc=None, unit_agg=None, measure_agg='normal', shared=False, provider=None):
+    def __init__(self, name, expr=None, desc=None, unit_agg='sum',
+                 distribution='normal', shared=False, provider=None):
         _Dimension.__init__(self, name, expr=expr, desc=desc, shared=shared, provider=provider)
-        self.unit_agg = unit_agg
-        self.measure_agg = measure_agg
+        self.unit_agg = unit_agg if isinstance(unit_agg, AGG_METHODS) else AGG_METHODS(unit_agg)
+        self.distribution = distribution if isinstance(distribution, DISTRIBUTIONS) else DISTRIBUTIONS(distribution)
 
 
 class MeasureDataFrame(pd.DataFrame):
+    """
+    This is a hacky prototype of what will be a convenient way to access measures
+    and metrics via a DataFrame.
+    """
 
     @property
     def _constructor(self):
@@ -206,18 +289,62 @@ class MeasureDataFrame(pd.DataFrame):
     def dimensions(self):
         return [col for col in self.columns if '|' not in col]
 
+    def _get_measure_distribution(self, name):
+        for field in self.measure_fields:
+            if field.startswith(name):
+                if len(field.split('|')) == 3:
+                    return DISTRIBUTIONS[field.split('|')[1].upper()]
+                return DISTRIBUTIONS.NONE
+
+    def _get_measure_distribution_fields(self, name):
+        distribution = self._get_measure_distribution(name)
+        if distribution == DISTRIBUTIONS.NONE:
+            return self[['{}|{}'.format(name, field) for field in DISTRIBUTION_FIELDS[distribution]]]
+        else:
+            return self[['{}|{}|{}'.format(name, distribution.name.lower(), field) for field in DISTRIBUTION_FIELDS[distribution]]]
+
+    def _get_measure(self, name):
+        if '|' in name:
+            name, feature = name.split('|', 1)
+        else:
+            feature = "sum"
+        feature = MEASURE_AGG_METHODS(feature)
+
+        # Check if measure exists
+        if name not in self.measures:
+            raise KeyError
+
+        distribution = self._get_measure_distribution(name)
+        distribution_fields = self._get_measure_distribution_fields(name).values.transpose()
+
+        stats = DISTRIBUTION_STATS[distribution][feature]
+
+        if isinstance(stats, tuple):
+            model = stats[0]
+            params = {
+                param: f(*distribution_fields) for param, f in stats[1].items()
+            }
+            return pd.Series(uarray(model.mean(**params), model.std(**params)), name=name, index=self.index)
+        else:
+            return pd.Series(stats(*distribution_fields), name=name, index=self.index)
+
     # Allow getting measures by distribution stats
     def __getitem__(self, name):
         try:
             return pd.DataFrame.__getitem__(self, name)
         except KeyError as e:
-            if '|' not in name:
-                if '{}|norm|sum'.format(name) in self.columns:
-                    mean = self['{}|norm|sum'.format(name)] / self['{}|norm|count'.format(name)]
-                    var = (self['{}|norm|sos'.format(name)] - self['{}|norm|sum'.format(name)]**2 / self['{}|norm|count'.format(name)]) / (self['{}|norm|count'.format(name)] - 1) / self['{}|norm|count'.format(name)]
-                    return pd.Series(uarray(mean, np.sqrt(var)), name=name, index=self.index)
-                elif '{}|count'.format(name) in self.columns:
-                    return self['{}|count'.format(name)]
+            try:
+                return self._get_measure(name)
+            except KeyError:
+                raise e
+            # if '|' not in name:
+            #     distribution =
+            #     if '{}|normal|sum'.format(name) in self.columns:
+            #         mean = self['{}|normal|sum'.format(name)] / self['{}|normal|count'.format(name)]
+            #         var = (self['{}|normal|sos'.format(name)] - self['{}|normal|sum'.format(name)]**2 / self['{}|normal|count'.format(name)]) / (self['{}|normal|count'.format(name)] - 1) / self['{}|normal|count'.format(name)]
+            #         return pd.Series(uarray(mean, np.sqrt(var)), name=name, index=self.index)
+            #     elif '{}|count'.format(name) in self.columns:
+            #         return self['{}|count'.format(name)]
             raise e
 
     def segmentby(self, segment_by=None):
