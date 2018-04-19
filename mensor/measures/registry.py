@@ -1,7 +1,7 @@
 from collections import Counter
 
 from .strategy import EvaluationStrategy
-from .types import _Dimension, _ResolvedDimension, _ResolvedMeasure, Provision
+from .types import _ProvidedFeature, _ResolvedFeature, Provision
 from ..utils import nested_dict_copy
 
 __all__ = ['MeasureRegistry']
@@ -174,10 +174,10 @@ class MeasureRegistry(object):
     def _resolve_identifier(self, unit_type):
         return self._cache.identifiers[unit_type][0]  # TODO: Use below mechanism?
 
-    def __resolve_dimension(self, unit_type, dimension, kind='dimension', dimension_index=None):
+    def __resolve_feature(self, unit_type, feature, kind='dimension', feature_index=None):
         """
         This is an internal method that traverses the `GraphCache` in order to
-        resolve a particular measure/dimension/identifier for a specified
+        resolve a particular feature (measure/dimension/identifier) for a specified
         unit_type. Note that if `dimension` is a string representation graph
         traversal (e.g. "transaction/person:seller/age") then the full graph
         traversal is not verified, only the last step from e.g. "person:seller"
@@ -186,68 +186,63 @@ class MeasureRegistry(object):
 
         Parameters:
             unit_type (str, _StatisticalUnitIdentifier): The unit type for which
-                to resolve a nominated dimension.
-            dimension (str): The dimension/measure to resolved. Note that
-                dimensions cannot be transitive at this level in the
-                mensor platform.+
+                to resolve a nominated feature.
+            feature (str, _ProvidedFeature): The feature to resolved. Note that
+                features must be directly related to the unit_type.
             kind (str): The kind of feature to resolve (one of: 'dimension',
                 'measure', 'foreign_key' or 'reverse_foreign_key')
-            dimension_index (dict): Override for standard kind-detected cache
+            feature_index (dict): Override for standard kind-detected cache
                 index.
 
         Returns:
-            _ResolvedDimension: The resolved feature, with information about
+            _ResolvedFeature: The resolved feature, with information about
                 provider and required joins.
         """
         # TODO: Actually apply checks.
+        assert kind in ('foreign_key', 'reverse_foreign_key', 'dimension', 'measure')
+
         unit_type = self._resolve_identifier(unit_type)
-        dimension_index = dimension_index or getattr(self._cache, kind + 's', {})
+        feature_index = feature_index or getattr(self._cache, kind + 's', {})
         via = unit_type.name
-        dimensions = None
+        features = None
 
         private = external = False
 
-        if isinstance(dimension, (_ResolvedDimension, _Dimension)):
-            private = dimension.private
-            external = dimension.external
+        if isinstance(feature, (_ResolvedFeature, _ProvidedFeature)):
+            private = feature.private
+            external = feature.external
 
-        if isinstance(dimension, _ResolvedDimension):
-            dimension = dimension.name
+        if isinstance(feature, _ResolvedFeature):  # Re-resolve any resolved feature
+            feature = feature.name
 
-        if isinstance(dimension, str):
-            s = dimension.split('/')
-            # assert len(s) == 1, '/'.join([str(unit_type), str(dimension)])
+        if isinstance(feature, str):
+            s = feature.split('/')
+            # assert len(s) == 1, '/'.join([str(unit_type), str(feature)])
             if len(s) > 1 and s[0] == unit_type.name:  # Remove reference to current unit_type
                 raise RuntimeError("Self-referencing foreign_key.")
             via_suffix = '/'.join(s[:-1])
-            dimension = s[-1]
+            feature = s[-1]
             if via_suffix:
                 unit_type = self._resolve_identifier(s[-2])
                 via += '/' + via_suffix
 
-            # Look for dimension starting from most specific unit key with specificity
+            # Look for feature starting from most specific unit key with specificity
             # less than or equal to provided unit_type. Unit_type name length
             # is a good proxy for this.
-            for avail_unit_type in sorted(dimension_index, key=lambda x: len(x.name), reverse=True):
-                if avail_unit_type.matches(unit_type) and dimension in dimension_index[avail_unit_type]:
-                    dimensions = dimension_index[avail_unit_type][dimension]
+            for avail_unit_type in sorted(feature_index, key=lambda x: len(x.name), reverse=True):
+                if avail_unit_type.matches(unit_type) and feature in feature_index[avail_unit_type]:
+                    features = feature_index[avail_unit_type][feature]
                     break
-            if dimensions is None:
-                raise ValueError("No such {} `{}` for unit type `{}`.".format(kind, dimension, unit_type))
+            if features is None:
+                raise ValueError("No such {} `{}` for unit type `{}`.".format(kind, feature, unit_type))
 
-        elif isinstance(dimension, _Dimension):
-            dimensions = [dimension]
+        elif isinstance(feature, _ProvidedFeature):
+            features = [feature]
 
-        if not isinstance(dimensions, list) and all(isinstance(d, _Dimension) for d in dimensions):
-            raise ValueError("Invalid type for {}: `{}`".format(kind, dimension.__class__))
-
-        if kind in ('dimension', 'foreign_key', 'reverse_foreign_key'):
-            r = _ResolvedDimension(dimension.name if isinstance(dimension, _Dimension) else dimension, via, providers=[d.provider for d in dimensions])
-        elif kind == 'measure':
-            r = _ResolvedMeasure(dimension.name if isinstance(dimension, _Dimension) else dimension, via, providers=[d.provider for d in dimensions])
         else:
-            raise RuntimeError("SHOULD NOT BE POSSIBLE. Invalid kind '{}'.".format(kind))
+            raise ValueError("Invalid type for {}: `{}`".format(kind, feature.__class__))
 
+        r = _ResolvedFeature(feature.name if isinstance(feature, _ProvidedFeature) else feature, via, providers=[d.provider for d in features])
         if external:
             r = r.as_external
         if private:
@@ -255,17 +250,17 @@ class MeasureRegistry(object):
         return r
 
     def _resolve_foreign_key(self, unit_type, foreign_type):
-        return self.__resolve_dimension(unit_type, foreign_type, kind='foreign_key')
+        return self.__resolve_feature(unit_type, foreign_type, kind='foreign_key')
 
     def _resolve_reverse_foreign_key(self, unit_type, foreign_type):
-        return self.__resolve_dimension(unit_type, foreign_type, kind='reverse_foreign_key')
+        return self.__resolve_feature(unit_type, foreign_type, kind='reverse_foreign_key')
 
     def _resolve_measure(self, unit_type, measure):
-        return self.__resolve_dimension(unit_type, measure, kind='measure')
+        return self.__resolve_feature(unit_type, measure, kind='measure')
 
     def _resolve_dimension(self, unit_type, dimension):
         try:
-            return self.__resolve_dimension(unit_type, dimension, kind='dimension')
+            return self.__resolve_feature(unit_type, dimension, kind='dimension')
         except ValueError:
             pass
         try:

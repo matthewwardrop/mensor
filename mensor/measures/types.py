@@ -45,7 +45,7 @@ class Join(object):
         self._name = name
 
 
-class _Dimension(object):
+class _ProvidedFeature(object):
 
     @classmethod
     def from_spec(cls, spec, provider=None):
@@ -128,10 +128,108 @@ class _Dimension(object):
         return self.name.__lt__(other.name)
 
 
-class _StatisticalUnitIdentifier(_Dimension):
+class _ResolvedFeature(object):
+
+    # TODO: Add kind
+
+    def __init__(self, name, via='', providers=[], external=False, private=False):
+        self.name = name
+        self.via = via
+        self.providers = providers
+        self.external = external
+        self.private = private
+
+    @property
+    def path(self):
+        return '/'.join('/'.join([self.via, self.name]).split('/')[1:])
+
+    @property
+    def providers(self):
+        return self._providers
+
+    @providers.setter
+    def providers(self, providers):
+        from .provider import MeasureProvider
+        self._providers = {}
+        if isinstance(providers, list):
+            for provider in providers:
+                assert isinstance(provider, MeasureProvider), "Invalid provider of type({})".format(type(provider))
+                self._providers[provider.name] = provider
+        elif isinstance(providers, dict):
+            self._providers.update(providers)
+        else:
+            raise ValueError("Invalid provider specification.")
+
+    @property
+    def via_next(self):
+        s = self.via.split('/')
+        if len(s) > 1:
+            return s[1]
+
+    @property
+    def resolved_next(self):
+        s = self.via.split('/')
+        if len(s) > 1:
+            return self.__class__(self.name, via='/'.join(s[1:]), providers=self.providers, external=self.external)
+        return self
+
+    @property
+    def as_external(self):
+        return self.__class__(self.name, via=self.via, providers=self.providers, external=True, private=self.private)
+
+    @property
+    def as_private(self):
+        return self.__class__(self.name, via=self.via, providers=self.providers, external=self.external, private=True)
+
+    def from_provider(self, provider):
+        from .provider import MeasureProvider
+        if not isinstance(provider, MeasureProvider):
+            provider = self.providers[provider]
+
+        dim = provider.resolve(self.name)
+        if self.external:
+            dim = dim.as_external
+        if self.private:
+            dim = dim.as_private
+
+        return dim
+
+    def choose_provider(self, provider):
+        self.providers = {provider: self.providers[provider]}
+
+    def __repr__(self):
+        attrs = (['e'] if self.external else []) + (['p'] if self.private else [])
+        return ('/'.join([self.via, self.name]) if self.via is not None else self.name) + ('({})'.format(','.join(attrs)) if attrs else '')
+
+    def __hash__(self):
+        return hash(self.name)
+
+    def __eq__(self, other):
+        if isinstance(other, _ResolvedFeature):
+            if other.name == self.name and other.via == self.via:
+                return True
+        elif isinstance(other, _ProvidedFeature):
+            try:
+                if other.name == self.name and other.provider.resolve(self.name):
+                    return True
+            except ValueError:
+                pass
+        elif isinstance(other, six.string_types):
+            if '/'.join([self.via, self.name]) == other:
+                return True
+        else:
+            return NotImplemented
+        return False
+
+
+class _Dimension(_ProvidedFeature):
+    pass
+
+
+class _StatisticalUnitIdentifier(_ProvidedFeature):
 
     def __init__(self, name, expr=None, desc=None, role='foreign', provider=None):
-        _Dimension.__init__(self, name, expr=expr, desc=desc, shared=True, provider=provider)
+        _ProvidedFeature.__init__(self, name, expr=expr, desc=desc, shared=True, provider=provider)
         assert role in ('primary', 'unique', 'foreign')
         self.role = role
 
@@ -153,7 +251,7 @@ class _StatisticalUnitIdentifier(_Dimension):
             prefix = '^'
         if self.is_unique:
             prefix = '*'
-        return prefix + _Dimension.__repr__(self)
+        return prefix + _ProvidedFeature.__repr__(self)
 
     def matches(self, unit_type, reverse=False):
         '''
@@ -171,6 +269,21 @@ class _StatisticalUnitIdentifier(_Dimension):
         if reverse:
             return startseq_match(unit_type.split(':'), self.name.split(':'))
         return startseq_match(self.name.split(':'), unit_type.split(':'))
+
+
+class _Measure(_ProvidedFeature):
+
+    # TODO: Types of measures
+    # raw: <name>:type = 'exact', <name>:sum, <name>:sample_size
+    # normal distribution: <name>:type = 'normal', <name>:sum, <name>:sos, <name>:sample_size
+    # binomial distribution: <name>:type = 'binomial', <name>:sum, <name>:sample_size
+    # other
+
+    def __init__(self, name, expr=None, desc=None, unit_agg='sum',
+                 distribution='normal', shared=False, provider=None):
+        _ProvidedFeature.__init__(self, name, expr=expr, desc=desc, shared=shared, provider=provider)
+        self.unit_agg = unit_agg if isinstance(unit_agg, AGG_METHODS) else AGG_METHODS(unit_agg)
+        self.distribution = distribution if isinstance(distribution, DISTRIBUTIONS) else DISTRIBUTIONS(distribution)
 
 
 class AGG_METHODS(Enum):
@@ -246,21 +359,6 @@ DISTRIBUTION_STATS = {
         )
     }
 }
-
-
-class _Measure(_Dimension):
-
-    # TODO: Types of measures
-    # raw: <name>:type = 'exact', <name>:sum, <name>:sample_size
-    # normal distribution: <name>:type = 'normal', <name>:sum, <name>:sos, <name>:sample_size
-    # binomial distribution: <name>:type = 'binomial', <name>:sum, <name>:sample_size
-    # other
-
-    def __init__(self, name, expr=None, desc=None, unit_agg='sum',
-                 distribution='normal', shared=False, provider=None):
-        _Dimension.__init__(self, name, expr=expr, desc=desc, shared=shared, provider=provider)
-        self.unit_agg = unit_agg if isinstance(unit_agg, AGG_METHODS) else AGG_METHODS(unit_agg)
-        self.distribution = distribution if isinstance(distribution, DISTRIBUTIONS) else DISTRIBUTIONS(distribution)
 
 
 class MeasureDataFrame(pd.DataFrame):
@@ -427,100 +525,6 @@ def quantilesofscores(self, as_weights=False, *, pre_sorted=False, sort_fields=N
 
 
 pd.Series.quantilesofscores = quantilesofscores
-
-
-class _ResolvedDimension(object):
-
-    def __init__(self, name, via='', providers=[], external=False, private=False):
-        self.name = name
-        self.via = via
-        self.providers = providers
-        self.external = external
-        self.private = private
-
-    @property
-    def path(self):
-        return '/'.join('/'.join([self.via, self.name]).split('/')[1:])
-
-    @property
-    def providers(self):
-        return self._providers
-
-    @providers.setter
-    def providers(self, providers):
-        from .provider import MeasureProvider
-        self._providers = {}
-        if isinstance(providers, list):
-            for provider in providers:
-                assert isinstance(provider, MeasureProvider), "Invalid provider of type({})".format(type(provider))
-                self._providers[provider.name] = provider
-        elif isinstance(providers, dict):
-            self._providers.update(providers)
-        else:
-            raise ValueError("Invalid provider specification.")
-
-    @property
-    def via_next(self):
-        s = self.via.split('/')
-        if len(s) > 1:
-            return s[1]
-
-    @property
-    def resolved_next(self):
-        s = self.via.split('/')
-        if len(s) > 1:
-            return self.__class__(self.name, via='/'.join(s[1:]), providers=self.providers, external=self.external)
-        return self
-
-    @property
-    def as_external(self):
-        return self.__class__(self.name, via=self.via, providers=self.providers, external=True, private=self.private)
-
-    @property
-    def as_private(self):
-        return self.__class__(self.name, via=self.via, providers=self.providers, external=self.external, private=True)
-
-    def from_provider(self, provider):
-        from .provider import MeasureProvider
-        if not isinstance(provider, MeasureProvider):
-            provider = self.providers[provider]
-
-        dim = provider.resolve(self.name)
-        if self.external:
-            dim = dim.as_external
-        if self.private:
-            dim = dim.as_private
-
-        return dim
-
-    def choose_provider(self, provider):
-        self.providers = {provider: self.providers[provider]}
-
-    def __repr__(self):
-        attrs = (['e'] if self.external else []) + (['p'] if self.private else [])
-        return ('/'.join([self.via, self.name]) if self.via is not None else self.name) + ('({})'.format(','.join(attrs)) if attrs else '')
-
-    def __hash__(self):
-        return hash(self.name)
-
-    def __eq__(self, other):
-        if isinstance(other, _ResolvedDimension):
-            if other.name == self.name and other.via == self.via:
-                return True
-        elif isinstance(other, _Dimension):
-            if other.name == self.name:
-                return True
-        elif isinstance(other, six.string_types):
-            if '/'.join([self.via, self.name]) == other:
-                return True
-        else:
-            return NotImplemented
-        return False
-
-
-class _ResolvedMeasure(_ResolvedDimension):
-
-    pass
 
 
 Provision = namedtuple('Provision', ['provider', 'measures', 'dimensions'])
