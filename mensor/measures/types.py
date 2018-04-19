@@ -112,7 +112,7 @@ class _ProvidedFeature(object):
         return dim
 
     def as_via(self, *vias):
-        vias = [via.name if isinstance(via, _Dimension) else via for via in vias]
+        vias = [via.name if isinstance(via, _ProvidedFeature) else via for via in vias]
         dim = copy.copy(self)
         current_vias = dim.via.split('/') if self.via is not None else []
         dim.via = '/'.join(vias + current_vias)
@@ -223,7 +223,12 @@ class _ResolvedFeature(object):
 
 
 class _Dimension(_ProvidedFeature):
-    pass
+
+    def __init__(self, name, expr=None, desc=None, shared=False, partition=False, provider=None):
+        _ProvidedFeature.__init__(self, name, expr=expr, desc=desc, shared=shared, provider=provider)
+        if not shared and partition:
+            raise ValueError("Partitions must be shared.")
+        self.partition = partition
 
 
 class _StatisticalUnitIdentifier(_ProvidedFeature):

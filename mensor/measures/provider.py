@@ -152,19 +152,38 @@ class MeasureProvider(object):
         self._dimensions[dimension] = dimension
         return self
 
-    def dimensions_for_unit(self, unit_type=None):
+    def dimensions_for_unit(self, unit_type=None, include_partitions=True):
         if unit_type is None:
             return self.dimensions
         unit_type = self.identifier_for_unit(unit_type)
 
         dimensions = {}
         for dimension in self.dimensions:
-            if self._unit_has_dimension(unit_type, dimension):
+            if (
+                self._unit_has_dimension(unit_type, dimension)
+                and (include_partitions or not dimension.partition)
+            ):
                 dimensions[dimension] = dimension
         return dimensions
 
     def _unit_has_dimension(self, unit_type, dimension):
         return unit_type.is_primary
+
+    # Semantic distinction between standard dimension and partition
+    # Since difference is semantically different but technically almost
+    # identical, we expose them as two different things.
+    # Note that partitions also appears as dimensions, since they are
+    # functionally equivalent in most cases.
+    # (partitions behave differently in joins TODO: document this difference)
+    def add_partition(self, name=None, desc=None, expr=None):
+        dimension = _Dimension(name, desc=desc, expr=expr, shared=True, partition=True, provider=self)
+        self._dimensions[dimension] = dimension
+        return self
+
+    def partitions_for_unit(self, unit_type=None):
+        return {
+            dimension: dimension for dimension in self.dimensions_for_unit(unit_type) if dimension.partition
+        }
 
     # Measure specifications
 

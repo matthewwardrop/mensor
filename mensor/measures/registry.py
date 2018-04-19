@@ -143,11 +143,18 @@ class MeasureRegistry(object):
     def unit_types(self):
         return set(self._cache.identifiers.keys())
 
-    def dimensions_for_unit(self, unit_type):
+    def dimensions_for_unit(self, unit_type, include_partitions=True):
         dims = set()
         for avail_unit_type in self._cache.dimensions:
             if avail_unit_type.matches(unit_type):
-                dims.update([v[0] for v in self._cache.dimensions[avail_unit_type].values()])
+                dims.update([v[0] for v in self._cache.dimensions[avail_unit_type].values() if include_partitions or not v[0].partition])
+        return dims
+
+    def partitions_for_unit(self, unit_type):
+        dims = set()
+        for avail_unit_type in self._cache.dimensions:
+            if avail_unit_type.matches(unit_type):
+                dims.update([v[0] for v in self._cache.dimensions[avail_unit_type].values() if v[0].partition])
         return dims
 
     def measures_for_unit(self, unit_type):
@@ -348,21 +355,19 @@ class MeasureRegistry(object):
         unit_types = [self._resolve_identifier(ut) for ut in unit_types] if len(unit_types) > 0 else sorted(self.unit_types)
         for unit_type in unit_types:
             print("{}:".format(unit_type.name))
-            if self.foreign_keys_for_unit(unit_type):
-                print("\tForeign Keys:")
-                for foreign_key in sorted(self.foreign_keys_for_unit(unit_type)):
-                    if foreign_key != unit_type:
-                        print("\t\t{}::{}: {}".format(foreign_key.provider.name, foreign_key.name, foreign_key.desc or "No description."))
-            if self.reverse_foreign_keys_for_unit(unit_type):
-                print("\tReverse Foreign Keys:")
-                for foreign_key in sorted(self.reverse_foreign_keys_for_unit(unit_type)):
-                    if foreign_key != unit_type:
-                        print("\t\t{}::{}: {}".format(foreign_key.provider.name, foreign_key.name, foreign_key.desc or "No description."))
-            if self.dimensions_for_unit(unit_type):
-                print("\tDimensions:")
-                for measure in sorted(self.dimensions_for_unit(unit_type)):
-                    print("\t\t{}::{}: {}".format(measure.provider.name, measure.name, measure.desc or "No description."))
-            if self.measures_for_unit(unit_type):
-                print("\tMeasures:")
-                for measure in sorted(self.measures_for_unit(unit_type)):
-                    print("\t\t{}::{}: {}".format(measure.provider.name, measure.name, measure.desc or "No description."))
+
+            features = [
+                ('Foreign Keys', self.foreign_keys_for_unit(unit_type)),
+                ('Reverse Foreign Keys', self.reverse_foreign_keys_for_unit(unit_type)),
+                ('Dimensions', self.dimensions_for_unit(unit_type, include_partitions=False)),
+                ('Partitions', self.partitions_for_unit(unit_type)),
+                ('Measures', self.measures_for_unit(unit_type))
+            ]
+
+            for feature_name, feature_set in features:
+                if not len(feature_set):
+                    continue
+                print("\t{}".format(feature_name))
+                for feature in sorted(feature_set):
+                    if feature != unit_type:
+                        print("\t\t{}::{}: {}".format(feature.provider.name, feature.name, feature.desc or "No description."))
