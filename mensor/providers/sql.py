@@ -9,13 +9,13 @@ WITH
         {{base_sql|indent(width=8)}}
     )
     {%- for join in joins %}
-    , "{{join.name}}" AS (
+    , {{quote}}{{join.name}}{{quote}} AS (
         {{join.object|indent(width=8)}}
     )
     {%- endfor %}
 SELECT
     {%- for dimension in dimensions %}
-    {% if loop.index0 > 0 %}, {% endif %}{{ dimension }}
+    {% if loop.index0 > 0 %}, {% endif %}{{ dimension[0] }} AS {{ dimension[1] }}
     {%- endfor %}
     {%- for measure in measures %}
     {% if dimensions or loop.index0 > 0 %}, {% endif %}{{ measure }}
@@ -23,13 +23,13 @@ SELECT
 FROM base_query
 {%- if joins|length > 0 %}
 {%- for join in joins %}
-JOIN "{{join.name}}" ON base_query."{{provider.resolve(join.left_on, kind='dimension').expr}}" = "{{join.name}}"."{{join.right_on}}"
+JOIN {{quote}}{{join.name}}{{quote}} ON base_query.{{quote}}{{provider.resolve(join.left_on, kind='dimension').expr}}{{quote}} = {{quote}}{{join.name}}{{quote}}.{{quote}}{{join.right_on}}{{quote}}
 {%- endfor %}
 {%- endif %}
 {%- if dimensions|length > 0 %}
 GROUP BY
 {%- for dimension in dimensions %}
-{%- if loop.index > 1 %},{% endif %} {{ loop.index }}
+{%- if loop.index0 > 0 %}, {% endif %}{{ dimension[0] }}
 {%- endfor %}
 {%- endif %}
 """.strip())
@@ -52,12 +52,13 @@ FROM {{table}}
 class SQLMeasureProvider(MeasureProvider):
     # TODO: Handle unit-aggregation
 
-    def __init__(self, *args, sql=None, db_client=None, **kwargs):
+    def __init__(self, *args, sql=None, db_client=None, quote='"', **kwargs):
         assert db_client is not None, "Must specify an (Omniduct-compatible) database client."
 
         MeasureProvider.__init__(self, *args, **kwargs)
         self._sql = sql
         self.db_client = db_client
+        self.quote = quote
 
         self.add_measure('count', distribution=None)
 
@@ -67,24 +68,32 @@ class SQLMeasureProvider(MeasureProvider):
 
     def _get_measures_sql(self, measures, joins):
         aggs = []
+        quote = self.quote
 
         for measure in measures:
             if measure == 'count':
-                aggs.append('SUM(1) AS "count|count"')
+                aggs.append('SUM(1) AS {quote}count|count{quote}'.format(**locals()))
                 continue
             if not measure.external and measure != "count":
                 if measure.measure_agg == 'normal':
-                    agg = ['SUM(base_query."{m}") AS "{o}|norm|sum"',
-                           'POWER(SUM(base_query."{m}"), 2) AS "{o}|norm|sos"',
-                           'COUNT(base_query."{m}") AS "{o}|norm|count"']
-                    aggs.extend(x.format(m=measure.expr, o=measure.via_name) for x in agg)
+                    aggs.extend(
+                        x.format(**locals())
+                        for x in [
+                            'SUM(base_query.{quote}{measure.expr}{quote}) AS {quote}{measure.via_name}|norm|sum{quote}',
+                            'POWER(SUM(base_query.{quote}{measure.expr}{quote}), 2) AS {quote}{measure.via_name}|norm|sos{quote}',
+                            'COUNT(base_query.{quote}{measure.expr}{quote}) AS {quote}{measure.via_name}|norm|count{quote}'
+                        ]
+                    )
                 elif measure.measure_agg == 'count':
-                    aggs.append('COUNT({m}) AS "{o}|count"'.format(m=measure.expr, o=measure.via_name))
+                    aggs.append(
+                        'COUNT({measure.expr}) AS {quote}{measure.via_name}|count{quote}'.
+                        format(**locals())
+                    )
                 else:
                     raise RuntimeError("Invalid target type: {}".format(measure.measure_agg))
 
-        for j in joins:
-            for measure in j.measures:
+        for join in joins:
+            for measure in join.measures:
                 if not measure.private:
                     if measure.measure_agg == 'normal':
                         suffixes = ['|norm|sum', '|norm|sos', '|norm|count']
@@ -93,7 +102,7 @@ class SQLMeasureProvider(MeasureProvider):
                     else:
                         raise RuntimeError("Invalid target type: {}".format(measure.measure_agg))
                     aggs.extend([
-                        'SUM("{n}"."{m}{s}") AS "{o}{s}"'.format(n=j.name, m=measure.via_name, o=measures[measure].via_name, s=suffix)
+                        'SUM({quote}{join.name}{quote}.{quote}{measure.via_name}{suffix}{quote}) AS {quote}{measures[measure].via_name}{suffix}{quote}'.format(**locals())
                         for suffix in suffixes
                     ])
 
@@ -102,15 +111,21 @@ class SQLMeasureProvider(MeasureProvider):
     def _get_dimensions_sql(self, dimensions, joins):
 
         dims = []
-
+        quote = self.quote
         for dimension in dimensions:
             if not dimension.external:
-                dims.append('base_query."{m}" AS "{o}"'.format(m=dimension.expr, o=dimension.via_name))
+                dims.append((
+                    'base_query.{quote}{dimension.expr}{quote}'.format(**locals()),
+                    '{quote}{dimension.via_name}{quote}'.format(**locals())
+                ))
 
         for j in joins:
             for dimension in j.dimensions:
                 if not dimension.private and dimension != j.right_on:
-                    dims.append('"{n}"."{m}" AS "{o}"'.format(n=j.name, m=dimension.via_name, o=dimensions[dimension].via_name))
+                    dims.append((
+                        '{quote}{j.name}{quote}.{quote}{dimension.via_name}{quote}'.format(**locals()),
+                        '{quote}{dimensions[dimension].via_name}{quote}'.format(**locals())
+                    ))
 
         return dims
 
