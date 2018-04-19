@@ -14,8 +14,8 @@ class EvaluationStrategy(object):
         self.measures = measures or []
         self.where = where or []
         self.segment_by = segment_by or []
-        self.join_on_left = join_on_left or self.unit_type.name
-        self.join_on_right = join_on_right or self.matched_unit_type.name
+        self.join_on_left = join_on_left or [self.unit_type.name]
+        self.join_on_right = join_on_right or [self.matched_unit_type.name]
         self.joins = joins or []
         self.opts = opts
 
@@ -63,6 +63,21 @@ class EvaluationStrategy(object):
         )
         if unit_type not in strategy.segment_by:
             strategy.segment_by.insert(0, strategy.provider.identifier_for_unit(unit_type.name))
+
+        # Add partitions to join keys and segment_by as necessary
+        common_partitions = (
+            set(self.provider.partitions_for_unit(self.matched_unit_type.name))
+            .intersection(strategy.provider.partitions_for_unit(strategy.unit_type.name))
+        )
+        if len(common_partitions) > 0:
+            for partition in common_partitions:
+                if partition not in self.segment_by:
+                    self.segment_by.append(self.provider.resolve(partition, kind='dimension').as_private)
+                if partition not in strategy.segment_by:
+                    strategy.segment_by.append(strategy.provider.resolve(partition, kind='dimension'))
+                strategy.join_on_left.extend([p.name for p in common_partitions])
+                strategy.join_on_right.extend([p.name for p in common_partitions])
+
         self.joins.append(strategy)
         return self
 
@@ -140,7 +155,7 @@ class EvaluationStrategy(object):
                     provider=self.provider,
                     unit_type=self.unit_type,
                     left_on=self.join_on_left,
-                    right_on='{}/{}'.format(self.unit_type.name, self.join_on_right),
+                    right_on=['{}/{}'.format(self.unit_type.name, j) for j in self.join_on_right],
                     measures=self.measures,
                     dimensions=self.segment_by,
                     how=self.join_type,

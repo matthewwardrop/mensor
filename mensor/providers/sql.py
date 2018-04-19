@@ -5,7 +5,7 @@ from mensor.measures.types import AGG_METHODS
 
 TEMPLATE = jinja2.Template("""
 WITH
-    base_query AS (
+    "base_query" AS (
         {{base_sql|indent(width=8)}}
     )
     {%- for join in joins %}
@@ -23,7 +23,10 @@ SELECT
 FROM base_query
 {%- if joins|length > 0 %}
 {%- for join in joins %}
-JOIN "{{join.name}}" ON base_query."{{provider.resolve(join.left_on, kind='dimension').expr}}" = "{{join.name}}"."{{join.right_on}}"
+JOIN "{{join.name}}" ON
+{%- for field in join.left_on -%}
+{% if loop.index0 > 0 %} AND{% endif %} "base_query"."{{provider.resolve(field, kind='dimension').expr}}" = "{{join.name}}"."{{join.right_on[loop.index0]}}"
+{%- endfor -%}
 {%- endfor %}
 {%- endif %}
 {%- if dimensions|length > 0 %}
@@ -70,30 +73,24 @@ class SQLMeasureProvider(MeasureProvider):
 
         for measure in measures:
             if measure == 'count':
+                aggs.append('SUM(1) AS "count|sum"')
                 aggs.append('SUM(1) AS "count|count"')
-                continue
-            if not measure.external and measure != "count":
-                if measure.measure_agg == 'normal':
-                    agg = ['SUM(base_query."{m}") AS "{o}|norm|sum"',
-                           'POWER(SUM(base_query."{m}"), 2) AS "{o}|norm|sos"',
-                           'COUNT(base_query."{m}") AS "{o}|norm|count"']
-                    aggs.extend(x.format(m=measure.expr, o=measure.via_name) for x in agg)
-                elif measure.measure_agg == 'count':
-                    aggs.append('COUNT({m}) AS "{o}|count"'.format(m=measure.expr, o=measure.via_name))
-                else:
-                    raise RuntimeError("Invalid target type: {}".format(measure.measure_agg))
+            elif not measure.external and not measure.private:
+                for field_suffix, col_map in self._get_distribution_fields(measure.distribution).items():
+                    aggs.append(
+                        '{col_op} AS "{field_name}{field_suffix}"'.format(
+                            col_op=col_map('"base_query".{}'.format(measure.expr)),
+                            field_name=measure.via_name,
+                            field_suffix=field_suffix
+                        )
+                    )
 
-        for j in joins:
-            for measure in j.measures:
+        for join in joins:
+            for measure in join.measures:
                 if not measure.private:
-                    if measure.measure_agg == 'normal':
-                        suffixes = ['|norm|sum', '|norm|sos', '|norm|count']
-                    elif measure.measure_agg == 'count':
-                        suffixes = ['|count']
-                    else:
-                        raise RuntimeError("Invalid target type: {}".format(measure.measure_agg))
+                    suffixes = list(self._get_distribution_fields(measure.distribution))
                     aggs.extend([
-                        'SUM("{n}"."{m}{s}") AS "{o}{s}"'.format(n=j.name, m=measure.via_name, o=measures[measure].via_name, s=suffix)
+                        'SUM("{n}"."{m}{s}") AS "{o}{s}"'.format(n=join.name, m=measure.via_name, o=measures[measure].via_name, s=suffix)
                         for suffix in suffixes
                     ])
 
@@ -104,12 +101,12 @@ class SQLMeasureProvider(MeasureProvider):
         dims = []
 
         for dimension in dimensions:
-            if not dimension.external:
-                dims.append('base_query."{m}" AS "{o}"'.format(m=dimension.expr, o=dimension.via_name))
+            if not dimension.external and not dimension.private:
+                dims.append('"base_query"."{m}" AS "{o}"'.format(m=dimension.expr, o=dimension.via_name))
 
         for j in joins:
             for dimension in j.dimensions:
-                if not dimension.private and dimension != j.right_on:
+                if not dimension.private and dimension not in j.right_on:
                     dims.append('"{n}"."{m}" AS "{o}"'.format(n=j.name, m=dimension.via_name, o=dimensions[dimension].via_name))
 
         return dims
