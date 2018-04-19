@@ -13,7 +13,8 @@ people = pd.DataFrame({
     'id_person': range(N),
     'name': np.random.choice(names, N),
     'age': np.random.randint(100, size=N),
-    'id_country': np.random.randint(1000, size=1000)
+    'id_country': np.random.randint(1000, size=1000),
+    'ds': '2018-01-01'
 }).reset_index().rename(columns={'index': 'id'})
 
 people.to_csv(os.path.join(data_dir, 'people.csv'), index=False)
@@ -23,6 +24,7 @@ transactions = pd.DataFrame({
     'id_seller': np.random.randint(1000, size=2 * N),
     'id_buyer': np.random.randint(1000, size=2 * N),
     'value': np.random.randint(1000, size=2 * N),
+    'ds': '2018-01-01'
 }).reset_index().rename(columns={'index': 'id'})
 
 transactions.to_csv(os.path.join(data_dir, 'transactions.csv'), index=False)
