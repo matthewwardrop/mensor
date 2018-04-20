@@ -183,7 +183,7 @@ class SQLMeasureProvider(MeasureProvider):
     def get_sql(self, *args, **kwargs):
         sql = self.get_ir(*args, **kwargs)
         if self.dialect.QUOTE_COL != '"':
-            sql.replace('"', self.dialect.QUOTE_COL)
+            sql = sql.replace('"', self.dialect.QUOTE_COL)
         return sql
 
     def _evaluate(self, unit_type, measures=None, segment_by=None, where=None, joins=None, **opts):
