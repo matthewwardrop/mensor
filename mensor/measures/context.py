@@ -104,7 +104,6 @@ class ContainerConstraint(BaseConstraint):
                 ops.append(operand)
         if len(ops) == 0:
             return None
-        print(ops)
         constraint = cls(ops, resolvable=resolvable)
         if simplify:
             constraint = constraint.simplify()
@@ -181,7 +180,6 @@ class And(ContainerConstraint):
 
     @operands.setter
     def operands(self, operands):
-        print(operands)
         if any(operand.has_generic and isinstance(operand, ContainerConstraint) for operand in operands):
             raise ValueError("Generic constraints cannot be nested.")
         self._operands = operands
