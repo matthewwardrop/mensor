@@ -184,7 +184,7 @@ class EvaluationStrategy(object):
         assert where.unit_type == unit_type.name
         where_dimensions = [
             registry._resolve_dimension(unit_type, dimension)
-            for dimension in where.dimensions if dimension not in segment_by
+            for dimension in where.scoped_dimensions if dimension not in segment_by
         ]
 
         # Step 1: Collect measures and dimensions into groups based on current unit_type
@@ -223,7 +223,7 @@ class EvaluationStrategy(object):
 
         def constraints_for_provision(provision):
             provision_constraints = []
-            for constraint in where.scoped_resolvable:
+            for constraint in where.generic_resolvable:
                 if len(
                     set(constraint.dimensions)
                     .difference(provision.provider.identifiers)
@@ -263,13 +263,13 @@ class EvaluationStrategy(object):
         for sub_strategy in evaluations[1:]:
             strategy.add_join(unit_type, sub_strategy)
 
-        strategy.where = list(set(strategy.where).union(where.resolvable))
+        strategy.where = list(set(strategy.where).union(where.scoped_resolvable))
 
         # Step 4: Mark any resolved where dependencies as private, unless otherwise
         # requested in `segment_by`
 
         for dimension in strategy.segment_by:
-            for constraint in where.resolvable:
+            for constraint in where.scoped_resolvable:
                 if dimension in constraint.dimensions and dimension not in segment_by:
                     dimension.private = True
 
