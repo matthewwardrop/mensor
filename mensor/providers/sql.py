@@ -79,8 +79,15 @@ class PrestoDialect(SQLDialect):
     POSITIONAL_GROUPBY = True
 
 
+class HiveDialect(SQLDialect):
+
+    QUOTE_COL = '`'
+    POSITIONAL_GROUPBY = False
+
+
 DIALECTS = {
-    'presto': PrestoDialect
+    'presto': PrestoDialect,
+    'hive': HiveDialect,
 }
 
 
