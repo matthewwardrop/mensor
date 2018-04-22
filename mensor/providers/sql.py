@@ -6,15 +6,6 @@ from mensor.measures.types import AGG_METHODS
 # TODO: Consider using sqlalchemy to generate SQL
 
 TEMPLATE = jinja2.Template("""
-WITH
-    "base_query" AS (
-        {{base_sql|indent(width=8)}}
-    )
-    {%- for join in joins %}
-    , "{{join.name}}" AS (
-        {{join.object|indent(width=8)}}
-    )
-    {%- endfor %}
 SELECT
     {%- for dimension in dimensions %}
     {% if loop.index0 > 0 %}, {% endif %}{{ dimension }}
@@ -22,12 +13,23 @@ SELECT
     {%- for measure in measures %}
     {% if dimensions or loop.index0 > 0 %}, {% endif %}{{ measure }}
     {%- endfor %}
-FROM base_query
+FROM (
+{%- if filter %}
+    SELECT * FROM (
+        {{ base_sql |indent(width=8)}}
+    ) s
+    WHERE {{ filter }}
+{%- else %}
+    {{ base_sql |indent(width=4)}}
+{%- endif %}
+) "{{ provider.name }}_query"
 {%- if joins|length > 0 %}
 {%- for join in joins %}
-JOIN "{{join.name}}" ON
+JOIN (
+    {{join.object|indent(width=4)}}
+) "{{join.name}}" ON
 {%- for field in join.left_on -%}
-{% if loop.index0 > 0 %} AND{% endif %} "base_query"."{{provider.resolve(field, kind='dimension').expr}}" = "{{join.name}}"."{{join.right_on[loop.index0]}}"
+{% if loop.index0 > 0 %} AND{% endif %} "{{ provider.name }}_query"."{{provider.resolve(field, kind='dimension').expr}}" = "{{join.name}}"."{{join.right_on[loop.index0]}}"
 {%- endfor -%}
 {%- endfor %}
 {%- endif %}
@@ -119,7 +121,7 @@ class SQLMeasureProvider(MeasureProvider):
                 for field_suffix, col_map in self._get_distribution_fields(measure.distribution).items():
                     aggs.append(
                         '{col_op} AS "{field_name}{field_suffix}"'.format(
-                            col_op=col_map('"base_query".{}'.format(measure.expr)),
+                            col_op=col_map('"{}_query".{}'.format(self.name, measure.expr)),
                             field_name=measure.via_name,
                             field_suffix=field_suffix
                         )
@@ -141,7 +143,7 @@ class SQLMeasureProvider(MeasureProvider):
 
         for dimension in dimensions:
             if not dimension.external and not dimension.private:
-                dims.append('"base_query"."{m}" AS "{o}"'.format(m=dimension.expr, o=dimension.via_name))
+                dims.append('"{n}_query"."{m}" AS "{o}"'.format(n=self.name, m=dimension.expr, o=dimension.via_name))
 
         for j in joins:
             for dimension in j.dimensions:
@@ -161,7 +163,7 @@ class SQLMeasureProvider(MeasureProvider):
                     dims.append(count)
                     count += 1
                 else:
-                    dims.append('"base_query"."{m}"'.format(m=dimension.expr))
+                    dims.append('"{n}_query"."{m}"'.format(n=self.name, m=dimension.expr))
 
         for j in joins:
             for dimension in j.dimensions:
@@ -182,16 +184,15 @@ class SQLMeasureProvider(MeasureProvider):
             measures=self._get_measures_sql(measures, joins),
             groupby=self._get_groupby_sql(segment_by, joins),
             joins=joins,
-            filter=' AND '.join(where) if where else '',
+            filter=' AND '.join([str(w) for w in where]) if where else '',
             positional_groupby=self.dialect.POSITIONAL_GROUPBY
         )
-        return sql
-
-    def get_sql(self, *args, **kwargs):
-        sql = self.get_ir(*args, **kwargs)
         if self.dialect.QUOTE_COL != '"':
             sql = sql.replace('"', self.dialect.QUOTE_COL)
         return sql
+
+    def get_sql(self, *args, **kwargs):
+        return self.get_ir(*args, **kwargs)
 
     def _evaluate(self, unit_type, measures=None, segment_by=None, where=None, joins=None, **opts):
         return self.db_client.query(self.get_sql(

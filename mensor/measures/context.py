@@ -253,7 +253,7 @@ class Constraint(BaseConstraint):
             if spec.startswith('*/'):
                 generic = True
                 spec = spec[2:]
-            m = re.match(r'^([a-zA-Z0-9_/:]+)(=)(.*)$', spec)
+            m = re.match(r'^([a-zA-Z0-9_/:]+)([=|\>|\<|\>=|\<=])(.*)$', spec)
             if m is None:
                 raise ValueError('Constraint expression does not satisfy for "<field>=<value>".')
             return cls(*m.groups(), generic=generic)
