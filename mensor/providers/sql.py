@@ -174,9 +174,12 @@ class SQLMeasureProvider(MeasureProvider):
 
         return dims
 
+    def _prerender_sql(self, unit_type, measures=None, segment_by=None, where=None, joins=None, via=None, **opts):
+        return self.sql
+
     def _get_ir(self, unit_type, measures=None, segment_by=None, where=None, joins=None, via=None, **opts):
         sql = TEMPLATE.render(
-            base_sql=self.sql,
+            base_sql=self._prerender_sql(unit_type, measures, segment_by, where, joins, via, **opts),
             provider=self,
             dimensions=self._get_dimensions_sql(segment_by, joins),
             measures=self._get_measures_sql(measures, joins),
