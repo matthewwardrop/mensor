@@ -9,7 +9,7 @@ from collections import OrderedDict
 import pandas as pd
 import six
 
-from .context import CONSTRAINTS, And
+from .context import CONSTRAINTS, And, Constraint
 from ..utils import AttrDict
 from .types import _Dimension, _Measure, _StatisticalUnitIdentifier, Join, MeasureDataFrame, MeasureSeries, AGG_METHODS, DISTRIBUTIONS, DISTRIBUTION_FIELDS
 
@@ -272,6 +272,7 @@ class MeasureProvider(object):
             unit_type = self.identifier_for_unit(unit_type)
             measures = {} if measures is None else self.resolve(measures, kind='measure')
             segment_by = {} if segment_by is None else self.resolve(segment_by, kind='dimension')
+            where = Constraint.from_spec(where)
             joins = joins or []
             return f(self, unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, **opts)
         return wrapped
@@ -304,9 +305,12 @@ class MeasureProvider(object):
         Returns:
             MeasureDataFrame: A dataframe of the results of the computation.
         """
-        # TODO: Enforce unit types are compatible with choice of measures / segment_by
-        # TODO: Enforce that all arguments have the correct types, to simplify
-        # subclasses work
+
+        if not unit_type.is_unique and len(segment_by) > 0:
+            raise RuntimeError("Cannot segment by any features when rebasing units.")
+
+        if not unit_type.is_unique:
+            raise NotImplementedError("Unit rebasing for reverse-foreign-key joins is not yet implemented.")  # TODO: Implement!
 
         post_joins = [j for j in joins if not j.compatible]
         joins = [j for j in joins if j.compatible]
@@ -340,6 +344,8 @@ class MeasureProvider(object):
                     where_prejoin.append(where)
                 else:
                     where_postjoin.append(where)
+        else:
+            where_prejoin = where
         where_prejoin = And.from_operands(where_prejoin)
         where_postjoin = And.from_operands(where_postjoin)
 
@@ -349,7 +355,10 @@ class MeasureProvider(object):
             measures,
             where=where_prejoin,
             segment_by=segment_by,
-            joins=joins, **opts
+            joins=joins,
+            stats=stats,
+            covariates=covariates,
+            **opts
         )
 
         # Join in precomputed incompatible joins
