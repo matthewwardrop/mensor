@@ -1,5 +1,8 @@
+import numbers
+
 import jinja2
 
+from mensor.measures.context import CONSTRAINTS
 from mensor.measures.provider import MeasureProvider
 from mensor.measures.types import AGG_METHODS
 
@@ -30,6 +33,9 @@ JOIN "{{join.name}}" ON
 {% if loop.index0 > 0 %} AND{% endif %} "base_query"."{{provider.resolve(field, kind='dimension').expr}}" = "{{join.name}}"."{{join.right_on[loop.index0]}}"
 {%- endfor -%}
 {%- endfor %}
+{%- endif %}
+{%- if constraints %}
+WHERE {{constraints}}
 {%- endif %}
 {%- if groupby|length > 0 %}
 GROUP BY
@@ -73,6 +79,32 @@ class SQLDialect(object):
         AGG_METHODS.COUNT: lambda x: "COUNT({})".format(x)
     }
 
+    @classmethod
+    def constraint_maps(cls):
+        return {
+            CONSTRAINTS.AND: lambda m, x, f: '({})'.format(' AND '.join(m(o, f) for o in x.operands)),
+            CONSTRAINTS.OR: lambda m, x, f: '({})'.format(' OR '.join(m(o, f) for o in x.operands)),
+            CONSTRAINTS.EQUALITY: lambda m, x, f: "{} = {}".format(f[x.field], cls.qv(x.value)),
+            CONSTRAINTS.INEQUALITY_GT: lambda m, x, f: "{} > {}".format(f[x.field], cls.qv(x.value)),
+            CONSTRAINTS.INEQUALITY_GTE: lambda m, x, f: "{} >= {}".format(f[x.field], cls.qv(x.value)),
+            CONSTRAINTS.INEQUALITY_LT: lambda m, x, f: "{} < {}".format(f[x.field], cls.qv(x.value)),
+            CONSTRAINTS.INEQUALITY_LTE: lambda m, x, f: "{} <= {}".format(f[x.field], cls.qv(x.value)),
+        }
+
+    @classmethod
+    def qc(cls, col):
+        "This method quotes columns appropriately."
+        return '{quote}{col}{quote}'.format(quote=cls.QUOTE_COL, col=col)
+
+    @classmethod
+    def qv(cls, value):
+        "This method quotes values appropriately."
+        if isinstance(value, str):
+            return '{quote}{value}{quote}'.format(quote=cls.QUOTE_STR, value=value)
+        elif isinstance(value, numbers.Number):
+            return str(value)
+        raise ValueError("SQL backend does not support quoting objects of type: `{}`".format(type(value)))
+
 
 class PrestoDialect(SQLDialect):
 
@@ -106,6 +138,20 @@ class SQLMeasureProvider(MeasureProvider):
 
     def _sql(self, measures, segment_by, where, joins):
         return self.__sql
+
+    def _dimension_map(self, dimensions, joins):
+        field_map = {}
+        for dimension in dimensions:
+            if not dimension.external:
+                field_map[dimension.via_name] = '"base_query"."{}"'.format(dimension.expr)
+
+        for j in joins:
+            print(dimensions, j.dimensions)
+            for dimension in j.dimensions:
+                if dimension not in j.right_on:
+                    field_map[dimensions[dimension.via_name].via_name] = '"{}"."{}"'.format(j.name, dimension.via_name)
+
+        return field_map
 
     def _get_measures_sql(self, measures, joins, stats, covariates):
         aggs = []
@@ -178,7 +224,13 @@ class SQLMeasureProvider(MeasureProvider):
 
         return dims
 
-    def _get_ir(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
+    def _get_where_sql(self, where, field_map):
+        if where is None:
+            return None
+        return self._constraint_map(where.kind)(self._get_where_sql, where, field_map)
+
+    def _get_ir(self, unit_type, measures, segment_by, where, joins, via, stats, covariates, **opts):
+        field_map = self._dimension_map(segment_by, joins)
         sql = TEMPLATE.render(
             base_sql=self._sql(measures=measures, segment_by=segment_by, where=where, joins=joins),
             provider=self,
@@ -186,7 +238,7 @@ class SQLMeasureProvider(MeasureProvider):
             measures=self._get_measures_sql(measures, joins),
             groupby=self._get_groupby_sql(segment_by, joins),
             joins=joins,
-            filter=' AND '.join(where) if where else '',
+            constraints=self._get_where_sql(where, field_map),
             positional_groupby=self.dialect.POSITIONAL_GROUPBY
         )
         if self.dialect.QUOTE_COL != '"':
@@ -209,6 +261,10 @@ class SQLMeasureProvider(MeasureProvider):
     @property
     def _measure_agg_methods(self):
         return self.dialect.MEASURE_AGG_METHODS
+
+    @property
+    def _constraint_maps(self):
+        return self.dialect.constraint_maps()
 
     def _is_compatible_with(self, provider):
         return isinstance(provider, self.__class__)
