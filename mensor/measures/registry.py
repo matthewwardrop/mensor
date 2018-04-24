@@ -341,7 +341,7 @@ class MeasureRegistry(object):
             # Support reverse foreign key use case, where unit type is not `unit_type`
             supported_measures = [measure for measure in measures if measure in p.measures]
             if len(supported_measures) > 0 and '/' in supported_measures[0].via:
-                join_prefix = self._resolve_identifier(supported_measures[0].via.split('/', 1)[1]).name
+                join_prefix = self._resolve_identifier(supported_measures[0].via.split('/')[1]).name
             else:
                 join_prefix = unit_type.name
 
