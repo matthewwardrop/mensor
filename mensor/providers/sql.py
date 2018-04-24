@@ -102,7 +102,7 @@ class SQLMeasureProvider(MeasureProvider):
         self.db_client = db_client
         self.dialect = DIALECTS[dialect]
 
-        self.add_measure('count', distribution=None)
+        self.add_measure('count', shared=True, distribution=None)
 
     @property
     def sql(self):
@@ -206,6 +206,9 @@ class SQLMeasureProvider(MeasureProvider):
     @property
     def _measure_agg_methods(self):
         return self.dialect.MEASURE_AGG_METHODS
+
+    def _is_compatible_with(self, provider):
+        return isinstance(provider, self.__class__)
 
 
 class SQLTableMeasureProvider(SQLMeasureProvider):

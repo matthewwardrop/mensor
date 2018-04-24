@@ -3,13 +3,15 @@
 # TODO: metrics.for_segment(Segment/Target instance).measures.evaluate('bookings/trains')
 #
 # TODO: metrics.measures.booking_value.evaluate(segment_by='test')
+import itertools
 from collections import OrderedDict
 
 import pandas as pd
 import six
 
+from .context import CONSTRAINTS, And
 from ..utils import AttrDict
-from .types import _Dimension, _Measure, _StatisticalUnitIdentifier, Join, MeasureDataFrame, MeasureSeries, DISTRIBUTIONS, DISTRIBUTION_FIELDS
+from .types import _Dimension, _Measure, _StatisticalUnitIdentifier, Join, MeasureDataFrame, MeasureSeries, AGG_METHODS, DISTRIBUTIONS, DISTRIBUTION_FIELDS
 
 __all__ = ['MeasureProvider']
 
@@ -57,6 +59,8 @@ class MeasureProvider(object):
         - .dimensions
         - .add_dimension
         - .dimensions_for_unit
+        - .add_partition
+        - .partitions_or_unit
 
         Measures:
         - .measures
@@ -137,7 +141,7 @@ class MeasureProvider(object):
     def _unit_has_foreign_key(self, unit_type, foreign_key):
         return unit_type.is_unique
 
-    # Dimension secifications
+    # Dimension specifications
 
     @property
     def dimensions(self):
@@ -167,7 +171,7 @@ class MeasureProvider(object):
         return dimensions
 
     def _unit_has_dimension(self, unit_type, dimension):
-        return unit_type.is_primary
+        return unit_type.is_unique
 
     # Semantic distinction between standard dimension and partition
     # Since difference is semantically different but technically almost
@@ -197,7 +201,7 @@ class MeasureProvider(object):
 
     def add_measure(self, name=None, expr=None, desc=None, shared=False, unit_agg='sum', distribution='normal'):
         measure = _Measure(name, expr=expr, desc=desc, shared=shared, unit_agg=unit_agg, distribution=distribution, provider=self)
-        assert measure.unit_agg in self._measure_agg_methods, "This provider does not support aggregating at the unit level using '{}'.".format(measure.measure_agg)
+        assert measure.unit_agg in self._agg_methods, "This provider does not support aggregating at the unit level using '{}'.".format(measure.measure_agg)
         self._measures[measure] = measure
         return self
 
@@ -213,25 +217,7 @@ class MeasureProvider(object):
         return measures
 
     def _unit_has_measure(self, unit_type, measure):
-        return unit_type.is_primary
-
-    # Measure aggregation methods
-    @property
-    def _measure_agg_methods(self):
-        return {}
-
-    def _measure_agg_method(self, agg_type):
-        return self._measure_agg_methods[agg_type]
-
-    # Measure distribution methods
-    def _get_distribution_fields(self, dist_type):
-        return OrderedDict([
-            (
-                ("|{field_name}" if dist_type == DISTRIBUTIONS.NONE else "|{dist_name}|{field_name}").format(field_name=field_name, dist_name=dist_type.name.lower()),
-                self._measure_agg_method(agg_type)
-            )
-            for field_name, agg_type in DISTRIBUTION_FIELDS[dist_type].items()
-        ])
+        return unit_type.is_unique
 
     # Resolution
 
@@ -291,7 +277,34 @@ class MeasureProvider(object):
         return wrapped
 
     @_prepare_evaluation_args
-    def evaluate(self, unit_type, measures=None, segment_by=None, where=None, joins=None, **opts):
+    def evaluate(self, unit_type, measures=None, segment_by=None, where=None,
+                 joins=None, stats=True, covariates=False, **opts):
+        """
+        This method evaluates the requested `measures` in this MeasureProvider
+        segmented by the dimensions in `segment_by` after joining in the
+        joins in `joins` and subject to the constraints in `where`; treating
+        `unit_type` objects as indivisible.
+
+        Parameters:
+            unit_type (str, _StatisticalUnitIdentifier): The unit to treat as
+                indivisible in this analysis.
+            measures (list<str, _Measure>): The measures to be calculated.
+            segment_by (list<str, _Feature>): The dimensions by which to segment
+                the measure computations.
+            where (dict, list, tuple, Constraint, EvaluationContext): The
+                constraints within which measures should be computed.
+            stats (bool): Whether to keep track of the distribution of the
+                measures, rather than just their sum.
+            covariates (bool, list<tuple>): Whether to compute all covariates
+                (if bool) or else a list of tuples of measures within which
+                all pairs of covariates should be computed.
+            opts (dict): Additional arguments to be passed onto `._evalaute`
+                implementations.
+
+        Returns:
+            MeasureDataFrame: A dataframe of the results of the computation.
+        """
+        # TODO: Enforce unit types are compatible with choice of measures / segment_by
         # TODO: Enforce that all arguments have the correct types, to simplify
         # subclasses work
 
@@ -304,11 +317,37 @@ class MeasureProvider(object):
             count_measure = self.measures['count'].as_private
             measures[count_measure] = count_measure
 
+        # If there are post-joins and where constraints, some of the constraints
+        # may need to be applied after joins. As such, we split the where
+        # constraints into where_prejoin and where_postjoin.
+        def resolvable_pre_join(constraint):
+            for dimension in constraint.dimensions:
+                if dimension not in itertools.chain(self.identifiers, self.dimensions, self.measures):
+                    return False
+            return True
+
+        where_prejoin = []
+        where_postjoin = []
+        if len(post_joins) > 0 and where:
+            if where.kind is CONSTRAINTS.AND:
+                for op in where.operands:
+                    if resolvable_pre_join(op):
+                        where_prejoin.append(op)
+                    else:
+                        where_postjoin.append(op)
+            else:
+                if resolvable_pre_join(where):
+                    where_prejoin.append(where)
+                else:
+                    where_postjoin.append(where)
+        where_prejoin = And.from_operands(where_prejoin)
+        where_postjoin = And.from_operands(where_postjoin)
+
         # Evaluate the requested measures from this MeasureProvider
         result = self._evaluate(
             unit_type,
             measures,
-            where=where,
+            where=where_prejoin,
             segment_by=segment_by,
             joins=joins, **opts
         )
@@ -324,8 +363,12 @@ class MeasureProvider(object):
                     left_on=join.left_on,
                     right_on=join.right_on,
                     how=join.how
-                ).drop(join.right_on, axis=1)
+                )
         joined_measures.difference(segment_by)
+
+        # Apply post-join constraints
+        if where_postjoin:
+            raise NotImplementedError("Post-join generic where clauses not implemented yet.")
 
         # All new joined in measures need to be multiplied by the count series of
         # this dataframe, so that they are properly weighted.
@@ -353,11 +396,13 @@ class MeasureProvider(object):
             return MeasureSeries(result)
         return MeasureDataFrame(result)
 
-    def _evaluate(self, unit_type, measures=None, segment_by=None, where=None, joins=None, **opts):
+    def _evaluate(self, unit_type, measures=None, segment_by=None, where=None,
+                  joins=None, stats=True, covariates=False, **opts):
         raise NotImplementedError("Generic implementation not implemented.")
 
     @_prepare_evaluation_args
-    def get_ir(self, unit_type, measures=None, segment_by=None, where=None, joins=None, via=None, **opts):
+    def get_ir(self, unit_type, measures=None, segment_by=None, where=None,
+               joins=None, stats=True, covariates=False, **opts):
         # Get intermediate representation for this evaluation query
         if not all(isinstance(j, Join) and j.compatible for j in joins):
             raise RuntimeError("All joins for IR must be compatible with this provider.")
@@ -367,18 +412,86 @@ class MeasureProvider(object):
             segment_by=segment_by,
             where=where,
             joins=joins,
-            via=tuple() if via is None else via,
+            stats=stats,
+            covariates=covariates,
             **opts
         )
 
-    def _get_ir(self, unit_type, measures=None, segment_by=None, where=None, joins=None, via=None, **opts):
+    def _get_ir(self, unit_type, measures=None, segment_by=None, where=None,
+                joins=None, stats=True, covariates=False, **opts):
         raise NotImplementedError
 
-    def _is_compatible_with(self, *providers):
+    # Compatibility
+    def _is_compatible_with(self, provider):
         '''
-        If this method returns True, this MeasureProvider will take responsibility
+        If this method returns True, this MeasureProvider can take responsibility
         for evaluation and/or interpreting the required fields from the provided
-        providers; otherwise, any required joins will be performed in memory in
+        provider; otherwise, any required joins will be performed in memory in
         pandas.
         '''
-        return all(provider.__class__ is self.__class__ for provider in providers)
+        return False
+
+    # Aggregation methods for measures
+    @property
+    def _agg_methods(self):
+        """
+        A dictionary of MeasureProvider implementation specific representations
+        of actions to perform for each of the types of aggregation specified
+        in `.types.AGG_METHODS`.
+        """
+        return {}
+
+    def _agg_method(self, agg_type):
+        """
+        Parameters:
+            agg_type (AGG_METHOD): The agg method type for which to extract
+                its representation for this instance of MeasureProvider.
+        """
+        if not isinstance(agg_type, AGG_METHODS):
+            raise ValueError("Agg type `{}` is not a valid instance of `mensor.measures.types.AGG_METHODS`.".format(agg_type))
+        if agg_type not in self._agg_methods:
+            raise NotImplementedError("Agg type `{}` is not implemented by `{}`.".format(agg_type, self.__class__))
+        return self._agg_methods[agg_type]
+
+    # Measure distribution methods
+    def _get_distribution_fields(self, dist_type):
+        """
+        This is a convenience method for subclasses to use to get the
+        target fields associated with a particular distribution.
+
+        Parameters:
+            dist_type (DISTRIBUTIONS): The distribution type for which to
+                extract target fields and aggregation methods.
+
+        Returns:
+            OrderedDict: A mapping of field suffixes to agg methods to collect
+                in order to reproduce the distribution from which a measure was
+                sampled.
+        """
+        return OrderedDict([
+            (
+                ("|{field_name}" if dist_type == DISTRIBUTIONS.NONE else "|{dist_name}|{field_name}").format(field_name=field_name, dist_name=dist_type.name.lower()),
+                self._agg_method(agg_type)
+            )
+            for field_name, agg_type in DISTRIBUTION_FIELDS[dist_type].items()
+        ])
+
+    # Constraint interpretation
+    @property
+    def _constraint_maps(self):
+        """
+        A dictionary of mappings from CONSTRAINTS types to an internal
+        representation useful to apply the constraint.
+        """
+        return {}
+
+    def _constraint_map(self, kind):
+        """
+        Parameters:
+            kind (CONSTRAINTS): The type of constraint for which to extract the
+                internal represtation of the mapper.
+        """
+
+        if kind not in self._constraint_maps:
+            raise NotImplementedError("{} cannot apply constraints of kind: `{}`".format(self.__class__.__name__, kind))
+        return self._constraint_maps[kind]

@@ -89,11 +89,11 @@ class _ProvidedFeature(object):
 
     def __eq__(self, other):
         if isinstance(other, self.__class__):
-            if other.name == self.name:
+            if other.name == self.name and other.via == self.via:
                 return True
             return False
         elif isinstance(other, six.string_types):
-            if self.name == other:
+            if self.name == other or self.via_name == other:
                 return True
             return False
         else:
@@ -167,6 +167,12 @@ class _ResolvedFeature(object):
             return s[1]
 
     @property
+    def via_name(self):
+        if self.via is None:
+            return self.name
+        return '{}/{}'.format(self.via, self.name)
+
+    @property
     def resolved_next(self):
         s = self.via.split('/')
         if len(s) > 1:
@@ -210,12 +216,15 @@ class _ResolvedFeature(object):
                 return True
         elif isinstance(other, _ProvidedFeature):
             try:
-                if other.name == self.name and other.provider.resolve(self.name):
+                if other.name == self.name and other.provider.resolve(self.name):  # TODO: Sort out the difference btween Resolved and Provided features
                     return True
             except ValueError:
                 pass
         elif isinstance(other, six.string_types):
-            if '/'.join([self.via, self.name]) == other:
+            if (
+                '/'.join([self.via, self.name]) == other or
+                '/'.join(['/'.join(self.via.split('/')[1:]), self.name]) == other
+            ):
                 return True
         else:
             return NotImplemented
@@ -532,5 +541,5 @@ def quantilesofscores(self, as_weights=False, *, pre_sorted=False, sort_fields=N
 pd.Series.quantilesofscores = quantilesofscores
 
 
-Provision = namedtuple('Provision', ['provider', 'measures', 'dimensions'])
+Provision = namedtuple('Provision', ['provider', 'join_prefix', 'measures', 'dimensions'])
 DimensionBundle = namedtuple('DimensionBundle', ['dimensions', 'measures'])

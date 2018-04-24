@@ -15,7 +15,7 @@ class PandasMeasureProvider(MeasureProvider):
             data = pd.read_csv(data)
         self.data = data
 
-        self.add_measure('count', distribution=None)
+        self.add_measure('count', shared=True, distribution=None)
 
     def _evaluate(self, unit_type, measures, where=None, segment_by=None, **opts):
         """
@@ -91,13 +91,10 @@ class PandasMeasureProvider(MeasureProvider):
         return d
 
     @property
-    def _measure_agg_methods(self):
+    def _agg_methods(self):
         return {
             AGG_METHODS.SUM: ('sum', lambda x: x),
             AGG_METHODS.MEAN: ('mean', lambda x: x),
             AGG_METHODS.SQUARE_SUM: ('sum', lambda x: x**2),
             AGG_METHODS.COUNT: ('sum', lambda x: 1)
         }
-
-    def _is_compatible_with(self, other):
-        return False

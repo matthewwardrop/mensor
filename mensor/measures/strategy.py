@@ -1,23 +1,38 @@
 import json
+from collections import OrderedDict
+from enum import Enum
 
-from .context import EvaluationContext
+from .context import EvaluationContext, And
 from .types import Join, DimensionBundle
+
+
+class STRATEGY_TYPE(Enum):
+    REGULAR = 1
+    UNIT_REBASE = 2
 
 
 class EvaluationStrategy(object):
 
     def __init__(self, registry, provider, unit_type, measures, segment_by=None,
-                 where=None, join_on_left=None, join_on_right=None, joins=None, **opts):
+                 where=None, join_on_left=None, join_on_right=None,
+                 join_prefix=None, joins=None):
         self.registry = registry
         self.provider = provider
+
+        # Statistical unit used for evaluation
         self.unit_type = unit_type
+
+        # Anticipated measures, segmentations and constraints
         self.measures = measures or []
-        self.where = where or []
         self.segment_by = segment_by or []
+        self.where = where
+
+        # Join parameters
+        self.is_joined = False
         self.join_on_left = join_on_left or [self.unit_type.name]
         self.join_on_right = join_on_right or [self.matched_unit_type.name]
         self.joins = joins or []
-        self.opts = opts
+        self.join_prefix = join_prefix or self.unit_type.name
 
     @property
     def matched_unit_type(self):
@@ -25,27 +40,77 @@ class EvaluationStrategy(object):
             if identifier.matches(self.unit_type):
                 return identifier
 
+    def reverse_matched_unit_type(self, strategy):
+        for identifier in sorted(self.provider.identifiers, key=lambda x: len(x.name), reverse=True):
+            if identifier.matches(strategy.unit_type, reverse=False):
+                return identifier
+
+    @property
+    def strategy_type(self):
+        if not self.matched_unit_type.is_primary:
+            return STRATEGY_TYPE.UNIT_REBASE
+        else:
+            return STRATEGY_TYPE.REGULAR
+
     def __repr__(self):
         class StrategyEncoder(json.JSONEncoder):
             def default(self, o):
                 if isinstance(o, EvaluationStrategy):
-                    return {
-                        'provider': o.provider,
-                        'unit_type': o.unit_type,
-                        'measures': o.measures,
-                        'where': o.where,
-                        'segment_by': o.segment_by,
-                        'join_on_left': o.join_on_left,
-                        'join_on_right': o.join_on_right,
-                        'join_type': o.join_type,
-                        'joins': o.joins,
-                    }
+                    d = OrderedDict([
+                        ('provider', o.provider),
+                        ('unit_type', o.unit_type)
+                    ])
+                    if o.measures:
+                        d['measures'] = o.measures
+                        d['strategy_type'] = o.strategy_type
+                    if o.segment_by:
+                        d['segment_by'] = o.segment_by
+                    # if o.where:
+                    d['where'] = o.where
+                    if o.is_joined:
+                        d['join_on_left'] = o.join_on_left
+                        d['join_on_right'] = o.join_on_right
+                        d['join_type'] = o.join_type
+                        if o.join_prefix != o.unit_type.name:
+                            d['join_prefix'] = o.join_prefix
+                    if o.joins:
+                        d['joins'] = o.joins
+                    return d
                 return str(o)
         return 'EvaluationStrategy(' + json.dumps(self, indent=4, cls=StrategyEncoder) + ')'
 
     def add_join(self, unit_type, strategy):
         # TODO: Make atomic
         assert isinstance(strategy, EvaluationStrategy)
+
+        # Add primary join key if missing and set join
+        if unit_type not in self.segment_by:
+            self.segment_by.insert(0, self.provider.identifier_for_unit(unit_type.name).as_private)
+        if unit_type not in strategy.segment_by:
+            strategy.segment_by.insert(0, strategy.provider.identifier_for_unit(unit_type.name))
+
+        if strategy.strategy_type is STRATEGY_TYPE.UNIT_REBASE:
+            strategy.join_on_left = [self.reverse_matched_unit_type(strategy).name]
+            strategy.join_on_right = [strategy.unit_type.name]
+        else:
+            strategy.join_on_left = [strategy.unit_type.name]
+            strategy.join_on_right = [strategy.matched_unit_type.name]
+
+        # Add common partitions to join keys
+        common_partitions = list(
+            set(self.provider.partitions_for_unit(self.matched_unit_type.name))
+            .intersection(strategy.provider.partitions_for_unit(strategy.unit_type.name))
+        )
+
+        for partition in common_partitions:
+            if partition not in self.segment_by:
+                self.segment_by.append(self.provider.resolve(partition, kind='dimension').as_private)
+            if partition not in strategy.segment_by:
+                strategy.segment_by.append(strategy.provider.resolve(partition, kind='dimension'))
+            strategy.join_on_left.extend([p.name for p in common_partitions])
+            strategy.join_on_right.extend([p.name for p in common_partitions])
+
+        # Add measures and segmentations in parent from join
         self.measures.extend(
             (
                 measure.as_external.as_via(strategy.unit_type)
@@ -59,49 +124,34 @@ class EvaluationStrategy(object):
                 if strategy.unit_type != self.unit_type else
                 dimension.as_external
             )
-            for dimension in strategy.segment_by if not dimension.private
+            for dimension in strategy.segment_by if not dimension.private and (dimension in strategy.segment_by or dimension not in strategy.join_on_right)
         )
-        if unit_type not in strategy.segment_by:
-            strategy.segment_by.insert(0, strategy.provider.identifier_for_unit(unit_type.name))
 
-        # Add partitions to join keys and segment_by as necessary
-        common_partitions = (
-            set(self.provider.partitions_for_unit(self.matched_unit_type.name))
-            .intersection(strategy.provider.partitions_for_unit(strategy.unit_type.name))
-        )
-        if len(common_partitions) > 0:
-            for partition in common_partitions:
-                if partition not in self.segment_by:
-                    self.segment_by.append(self.provider.resolve(partition, kind='dimension').as_private)
-                if partition not in strategy.segment_by:
-                    strategy.segment_by.append(strategy.provider.resolve(partition, kind='dimension'))
-                strategy.join_on_left.extend([p.name for p in common_partitions])
-                strategy.join_on_right.extend([p.name for p in common_partitions])
+        # Set joined flag
+        strategy.is_joined = True
 
         self.joins.append(strategy)
         return self
 
     @property
     def join_type(self):
-        if any(not w.scoped for w in self.where):
+        if self.where is not None and len(self.where.dimensions) > 0:
             return 'inner'
         for join in self.joins:
             if join.join_type == 'inner':
                 return 'inner'
         return 'left'
 
-    def execute(self, ir_only=False, as_join=False, compatible=False, via=None):
+    def execute(self, stats=False, ir_only=False, as_join=False,
+                compatible=False, **opts):
         # Step 1: Build joins
+        stats = stats and not self.is_joined
         joins = []
-        if via is None:
-            via = tuple()
-        via += (self.unit_type.name,)
 
         for join in self.joins:
             joins.append(join.execute(
                 as_join=True,
-                compatible=join.provider._is_compatible_with(self.provider),
-                via=via
+                compatible=join.provider._is_compatible_with(self.provider)
             ))
 
         # Step 2: Evaluate provider
@@ -120,8 +170,8 @@ class EvaluationStrategy(object):
                         segment_by=self.segment_by,
                         where=self.where,
                         joins=joins,
-                        via=via[1:],
-                        **self.opts
+                        stats=stats,
+                        **opts
                     ),
                     how=self.join_type,
                     compatible=True
@@ -136,8 +186,8 @@ class EvaluationStrategy(object):
                 segment_by=self.segment_by,
                 where=self.where,
                 joins=joins,
-                via=via[1:],
-                **self.opts
+                stats=stats,
+                **opts
             )
         else:
             evaluated = self.provider.evaluate(
@@ -146,16 +196,17 @@ class EvaluationStrategy(object):
                 segment_by=self.segment_by,
                 where=self.where,
                 joins=joins,
-                **self.opts
+                stats=stats,
+                **opts
             )
 
             if as_join:
-                evaluated.columns = ['{}/{}'.format(self.unit_type.name, c) if c != self.unit_type else c for c in evaluated.columns]
+                evaluated = evaluated.add_prefix('{}/'.format(self.join_prefix))
                 return Join(
                     provider=self.provider,
                     unit_type=self.unit_type,
                     left_on=self.join_on_left,
-                    right_on=['{}/{}'.format(self.unit_type.name, j) for j in self.join_on_right],
+                    right_on=['{}/{}'.format(self.join_prefix, j) for j in self.join_on_right],
                     measures=self.measures,
                     dimensions=self.segment_by,
                     how=self.join_type,
@@ -184,7 +235,8 @@ class EvaluationStrategy(object):
         assert where.unit_type == unit_type.name
         where_dimensions = [
             registry._resolve_dimension(unit_type, dimension)
-            for dimension in where.scoped_dimensions if dimension not in segment_by
+            for dimension in where.scoped_applicable_dimensions
+            if dimension not in segment_by
         ]
 
         # Step 1: Collect measures and dimensions into groups based on current unit_type
@@ -197,9 +249,16 @@ class EvaluationStrategy(object):
             for dimension in dimensions:
                 if not dimension.via_next:
                     current_evaluation._asdict()[kind].append(dimension)
+                elif (
+                    kind == 'measures' and
+                    dimension.via_next in registry.reverse_foreign_keys_for_unit(unit_type)
+                ):
+                    current_evaluation._asdict()[kind].append(dimension)
+                    if unit_type not in current_evaluation.dimensions:
+                        current_evaluation.dimensions.append(registry._resolve_identifier(unit_type))
                 else:
-                    next_unit_type = registry._resolve_identifier(dimension.via_next)
-                    if dimension.via_next not in next_evaluations:
+                    next_unit_type = registry._resolve_foreign_key(unit_type, dimension.via_next)
+                    if next_unit_type not in next_evaluations:
                         next_evaluations[next_unit_type] = DimensionBundle(dimensions=[], measures=[])
                     next_evaluations[next_unit_type]._asdict()[kind].append(dimension.resolved_next)
 
@@ -209,9 +268,8 @@ class EvaluationStrategy(object):
 
         # Add required dimension for joining in next unit_types
         for next_unit_type in next_evaluations:
-            foreign_key = registry._resolve_foreign_key(unit_type, next_unit_type)
-            if foreign_key not in current_evaluation.dimensions:
-                current_evaluation.dimensions.append(foreign_key.as_private)
+            if next_unit_type not in current_evaluation.dimensions:
+                current_evaluation.dimensions.append(next_unit_type.as_private)
 
         # Step 2: Create optimal joins for current unit_type
 
@@ -223,7 +281,7 @@ class EvaluationStrategy(object):
 
         def constraints_for_provision(provision):
             provision_constraints = []
-            for constraint in where.generic_resolvable:
+            for constraint in where.generic_applicable:
                 if len(
                     set(constraint.dimensions)
                     .difference(provision.provider.identifiers)
@@ -231,7 +289,7 @@ class EvaluationStrategy(object):
                     .difference(provision.provider.measures)
                 ) == 0:
                     provision_constraints.append(constraint)
-            return provision_constraints
+            return And.from_operands(provision_constraints)
 
         evaluations = [
             cls(
@@ -240,7 +298,8 @@ class EvaluationStrategy(object):
                 unit_type=unit_type,
                 measures=provision.measures,
                 segment_by=provision.dimensions,
-                where=constraints_for_provision(provision)
+                where=constraints_for_provision(provision),
+                join_prefix=provision.join_prefix
             ) for provision in provisions
         ]
 
@@ -263,15 +322,15 @@ class EvaluationStrategy(object):
         for sub_strategy in evaluations[1:]:
             strategy.add_join(unit_type, sub_strategy)
 
-        strategy.where = list(set(strategy.where).union(where.scoped_resolvable))
+        strategy.where = And.from_operands(strategy.where, where.scoped_applicable)
 
         # Step 4: Mark any resolved where dependencies as private, unless otherwise
         # requested in `segment_by`
 
-        for dimension in strategy.segment_by:
-            for constraint in where.scoped_resolvable:
-                if dimension in constraint.dimensions and dimension not in segment_by:
-                    dimension.private = True
+        for dimension in where.scoped_applicable_dimensions:
+            if dimension not in segment_by:
+                index = strategy.segment_by.index(dimension)
+                strategy.segment_by[index] = strategy.segment_by[index].as_private
 
         # Step 5: Return EvaluationStrategy, and profit.
 
