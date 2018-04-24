@@ -121,4 +121,4 @@ class PandasMeasureProvider(MeasureProvider):
             return '"{}"'.format(value)  # TODO: Worry about quotes in string.
         elif isinstance(value, numbers.Number):
             return str(value)
-        raise ValueError("SQL backend does not support quoting objects of type: `{}`".format(type(value)))
+        raise ValueError("Pandas backend does not support quoting objects of type: `{}`".format(type(value)))
