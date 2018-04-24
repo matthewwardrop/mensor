@@ -57,8 +57,8 @@ class MeasureRegistry(object):
 
             # Require that each provider have at least one primary key
             # and a measure "count".
-            if len(list(identifier for identifier in provider.identifiers if identifier.is_primary)) == 0:
-                raise RuntimeError("MeasureProvider '{}' does not have at least one primary identifier.".format(provider))
+            if len(list(identifier for identifier in provider.identifiers if identifier.is_unique)) == 0:
+                raise RuntimeError("MeasureProvider '{}' does not have at least one unique identifier.".format(provider))
             if 'count' not in provider.measures:
                 raise RuntimeError("MeasureProvider '{}' does not provide a 'count' measure.".format(provider))
 
@@ -218,15 +218,13 @@ class MeasureRegistry(object):
         if isinstance(feature, (_ResolvedFeature, _ProvidedFeature)):
             private = feature.private
             external = feature.external
-
-        if isinstance(feature, _ResolvedFeature):  # Re-resolve any resolved feature
-            feature = feature.name
+            feature = feature.via_name  # Re-resolve any resolved feature, since resolved features are currently not deeply resolved
 
         if isinstance(feature, str):
             s = feature.split('/')
             # assert len(s) == 1, '/'.join([str(unit_type), str(feature)])
             if len(s) > 1 and s[0] == unit_type.name:  # Remove reference to current unit_type
-                raise RuntimeError("Self-referencing foreign_key.")
+                s = s[1:]
             via_suffix = '/'.join(s[:-1])
             feature = s[-1]
             if via_suffix:
@@ -237,9 +235,16 @@ class MeasureRegistry(object):
             # less than or equal to provided unit_type. Unit_type name length
             # is a good proxy for this.
             for avail_unit_type in sorted(feature_index, key=lambda x: len(x.name), reverse=True):
-                if avail_unit_type.matches(unit_type) and feature in feature_index[avail_unit_type]:
-                    features = feature_index[avail_unit_type][feature]
-                    break
+                if kind in ('foreign_key', 'reverse_foreign_key'):  # Handle self-lookup of hierarchical types. TODO: Do this more intelligently
+                    if avail_unit_type.matches(unit_type):
+                        for feature_candidate in sorted(feature_index[avail_unit_type], key=lambda x: len(x.name), reverse=True):
+                            if feature_candidate.matches(feature):
+                                features = feature_index[avail_unit_type][feature_candidate]
+                                break
+                else:  # Handle all other cases.
+                    if avail_unit_type.matches(unit_type) and feature in feature_index[avail_unit_type]:
+                        features = feature_index[avail_unit_type][feature]
+                        break
             if features is None:
                 raise ValueError("No such {} `{}` for unit type `{}`.".format(kind, feature, unit_type))
 
@@ -332,8 +337,17 @@ class MeasureRegistry(object):
         dimension_count = len(measures) + len(dimensions)
         while dimension_count > 0:
             p = get_next_provider(unit_type, measures, dimensions, primary=True if require_primary and len(provisions) == 0 else False)
+
+            # Support reverse foreign key use case, where unit type is not `unit_type`
+            supported_measures = [measure for measure in measures if measure in p.measures]
+            if len(supported_measures) > 0 and '/' in supported_measures[0].via:
+                join_prefix = self._resolve_identifier(supported_measures[0].via.split('/', 1)[1]).name
+            else:
+                join_prefix = unit_type.name
+
             provisions.append(Provision(
                 p,
+                join_prefix,
                 measures=[measures.pop(measure).from_provider(p) for measure in measures.copy() if measure in p.measures],
                 dimensions=[dimensions.pop(dimension).from_provider(p) for dimension in dimensions.copy() if dimension in p.dimensions or dimension in p.identifiers or dimension in p.measures]
             ))
@@ -343,13 +357,14 @@ class MeasureRegistry(object):
 
         return provisions
 
-    def evaluate(self, unit_type, measures=None, segment_by=None, where=None, dry_run=False, **opts):
+    def evaluate(self, unit_type, measures=None, segment_by=None, where=None,
+                 stats=True, covariates=False, dry_run=False, **opts):
         strategy = EvaluationStrategy.from_spec(
-            self, unit_type, measures, where=where, segment_by=segment_by, **opts
+            self, unit_type, measures, where=where, segment_by=segment_by
         )
         if dry_run:
             return strategy
-        return strategy.execute()
+        return strategy.execute(stats=stats, covariates=covariates, **opts)
 
     def show(self, *unit_types):
         unit_types = [self._resolve_identifier(ut) for ut in unit_types] if len(unit_types) > 0 else sorted(self.unit_types)
