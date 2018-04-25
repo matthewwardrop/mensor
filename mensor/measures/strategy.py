@@ -191,7 +191,7 @@ class EvaluationStrategy(object):
                 return 'inner'
         return 'left'
 
-    def execute(self, stats=False, ir_only=False, as_join=False,
+    def execute(self, stats=True, ir_only=False, as_join=False,
                 compatible=False, **opts):
 
         self._check_constraints()
