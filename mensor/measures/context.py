@@ -295,6 +295,8 @@ class Constraint(BaseConstraint):
     def from_spec(cls, spec):
         if spec is None:
             return None
+        elif isinstance(spec, Constraint):
+            return spec
         elif isinstance(spec, list):
             r = And.from_operands(*[cls.from_spec(s) for s in spec])
             return r
@@ -481,3 +483,12 @@ class EvaluationContext(object):
         return list(itertools.chain(
             *[op.dimensions for op in self.generic_applicable]
         ))
+
+    @property
+    def dimensions(self):
+        dimensions = []
+        if self.scoped_constraint:
+            dimensions.extend(self.scoped_constraint.dimensions)
+        if self.generic_constraint:
+            dimensions.extend(self.generic_constraint.dimensions)
+        return dimensions

@@ -3,7 +3,7 @@ from collections import OrderedDict
 from enum import Enum
 
 from .context import EvaluationContext, And
-from .types import Join, DimensionBundle, _StatisticalUnitIdentifier
+from .types import Join, DimensionBundle, _StatisticalUnitIdentifier, _Dimension
 
 
 class STRATEGY_TYPE(Enum):
@@ -34,6 +34,27 @@ class EvaluationStrategy(object):
         self.join_on_right = join_on_right or [self.matched_unit_type.name]
         self.joins = joins or []
         self.join_prefix = join_prefix or self.unit_type.name
+
+    def _check_constraints(self, prefix=None, raise_on_unconstrained=True):
+        """
+        This method checks whether dimensions that require constraints have been
+        constrained.
+        """
+        unconstrained = []
+        constrained_dimensions = self.where.dimensions if self.where else []
+        constrained_dimensions.extend(self.join_on_right)
+        for dimension in self.segment_by:
+            if isinstance(dimension, _Dimension) and dimension.requires_constraint and dimension not in constrained_dimensions:
+                unconstrained.append('{}/{}'.format(prefix, dimension.name) if prefix else dimension.name)
+
+        for join in self.joins:
+            unconstrained.extend(join._check_constraints(prefix='{}/{}'.format(prefix, join.unit_type.name) if prefix else join.unit_type.name, raise_on_unconstrained=False))
+
+        if raise_on_unconstrained and len(unconstrained) > 0:
+            raise RuntimeError("The following dimensions require and lack constraints: {}.".format(unconstrained))
+
+        return unconstrained
+
 
     @property
     def matched_unit_type(self):
@@ -158,6 +179,9 @@ class EvaluationStrategy(object):
 
     def execute(self, stats=False, ir_only=False, as_join=False,
                 compatible=False, **opts):
+
+        self._check_constraints()
+
         # Step 1: Build joins
         stats = stats and not self.is_joined
         joins = []

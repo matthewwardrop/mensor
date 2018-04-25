@@ -242,11 +242,12 @@ class _ResolvedFeature(object):
 
 class _Dimension(_ProvidedFeature):
 
-    def __init__(self, name, expr=None, desc=None, shared=False, partition=False, provider=None):
+    def __init__(self, name, expr=None, desc=None, shared=False, partition=False, requires_constraint=False, provider=None):
         _ProvidedFeature.__init__(self, name, expr=expr, desc=desc, shared=shared, provider=provider)
         if not shared and partition:
             raise ValueError("Partitions must be shared.")
         self.partition = partition
+        self.requires_constraint = requires_constraint
 
 
 class _StatisticalUnitIdentifier(_ProvidedFeature):
