@@ -406,6 +406,31 @@ class MeasureProvider(object):
 
     def _evaluate(self, unit_type, measures=None, segment_by=None, where=None,
                   joins=None, stats=True, covariates=False, **opts):
+        """
+        MeasureProviders must in their _evaluate function (in logical order):
+
+        - Extract the nominated measures and dimensions that are not marked 'external'
+          from their associated data store.
+        - Join in any compatible joins based on their intermediate representation, along
+          with any fields from these joins marked as 'external' in the the appropriate
+          dictionaries.
+        - Apply any constraints passed in through `where`.
+        - Suppress any dimensions / measures marked as private.
+        - * If `stats` is `True`, apply the statistical aggregations appropriate
+          for each field, as well as generating any requested covariates (only
+          ever required if there are no incompatible joins that will be merged
+          in later).
+
+        To assist with this, the base MeasureProvider.evaluate function commits to:
+        - Filtering down any external measures / dimensions to those that are needed
+          for compatible joins.
+        - Filtering any constraints down to those that can be applied within the
+          MeasureProvider.
+        - Adjusting the privacy of measures / dimensions such that all fields marked
+          private within the _evaluate call can be safely suppressed without breaking
+          the functionality of the parent `evaluate` method and future
+          incompatible joins.
+        """
         raise NotImplementedError("Generic implementation not implemented.")
 
     @_prepare_evaluation_args

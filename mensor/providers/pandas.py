@@ -20,15 +20,6 @@ class PandasMeasureProvider(MeasureProvider):
 
     def _evaluate(self, unit_type, measures, where=None, segment_by=None,
                   stats=True, covariates=False, **opts):
-        """
-        Should return a dataframe satisfying the following properties:
-        - measures should, depending on distribution, provide columns:
-            <measure>:norm:sum
-            <measure>:norm:sos
-            <measure>:norm:count
-        - dimensions should correspond to a single column, with the value being
-            the value of that dimension.
-        """
 
         def measure_map(name, op):
             return lambda df: op(df[name])
