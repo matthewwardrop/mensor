@@ -3,7 +3,7 @@ from collections import OrderedDict
 from enum import Enum
 
 from .context import EvaluationContext, And
-from .types import Join, DimensionBundle
+from .types import Join, DimensionBundle, _StatisticalUnitIdentifier
 
 
 class STRATEGY_TYPE(Enum):
@@ -23,6 +23,7 @@ class EvaluationStrategy(object):
         self.unit_type = unit_type
 
         # Anticipated measures, segmentations and constraints
+        # TODO: Use dictionaries to improve lookup performance
         self.measures = measures or []
         self.segment_by = segment_by or []
         self.where = where
@@ -84,10 +85,14 @@ class EvaluationStrategy(object):
         assert isinstance(strategy, EvaluationStrategy)
 
         # Add primary join key if missing and set join
-        if unit_type not in self.segment_by:
-            self.segment_by.insert(0, self.provider.identifier_for_unit(unit_type.name).as_private)
-        if unit_type not in strategy.segment_by:
-            strategy.segment_by.insert(0, strategy.provider.identifier_for_unit(unit_type.name))
+        self_unit_type = self.provider.identifier_for_unit(unit_type.name)
+        join_unit_type = strategy.provider.identifier_for_unit(unit_type.name)
+        if self_unit_type not in self.segment_by:
+            self.segment_by.insert(0, self_unit_type.as_private)
+        if join_unit_type not in strategy.segment_by:
+            strategy.segment_by.insert(0, join_unit_type)
+        else:
+            strategy.segment_by[strategy.segment_by.index(join_unit_type)].private = False
 
         if strategy.strategy_type is STRATEGY_TYPE.UNIT_REBASE:
             strategy.join_on_left = [self.reverse_matched_unit_type(strategy).name]
@@ -107,6 +112,8 @@ class EvaluationStrategy(object):
                 self.segment_by.append(self.provider.resolve(partition, kind='dimension').as_private)
             if partition not in strategy.segment_by:
                 strategy.segment_by.append(strategy.provider.resolve(partition, kind='dimension'))
+            else:
+                strategy.segment_by[strategy.segment_by.index(partition)].private = False
             strategy.join_on_left.extend([p.name for p in common_partitions])
             strategy.join_on_right.extend([p.name for p in common_partitions])
 
@@ -116,15 +123,22 @@ class EvaluationStrategy(object):
                 measure.as_external.as_via(strategy.unit_type)
                 if strategy.unit_type != self.unit_type else
                 measure.as_external
-            ) for measure in strategy.measures if not measure.private
+            )
+            for measure in strategy.measures
+            if not measure.private
         )
+
         self.segment_by.extend(
             (
                 dimension.as_external.as_via(strategy.unit_type)
                 if strategy.unit_type != self.unit_type else
                 dimension.as_external
             )
-            for dimension in strategy.segment_by if not dimension.private and (dimension in strategy.segment_by or dimension not in strategy.join_on_right)
+            for dimension in strategy.segment_by
+            if (
+                not dimension.private
+                and dimension not in strategy.join_on_right
+            )
         )
 
         # Set joined flag
@@ -242,24 +256,25 @@ class EvaluationStrategy(object):
         # Step 1: Collect measures and dimensions into groups based on current unit_type
         # and next unit_type
 
-        current_evaluation = DimensionBundle(dimensions=[], measures=[])
+        current_evaluation = DimensionBundle(unit_type=unit_type, dimensions=[], measures=[])
         next_evaluations = {}
 
         def collect_dimensions(dimensions, kind='measures'):
             for dimension in dimensions:
                 if not dimension.via_next:
                     current_evaluation._asdict()[kind].append(dimension)
-                elif (
+                elif (  # Handle reverse foreign key joins
                     kind == 'measures' and
                     dimension.via_next in registry.reverse_foreign_keys_for_unit(unit_type)
                 ):
-                    current_evaluation._asdict()[kind].append(dimension)
-                    if unit_type not in current_evaluation.dimensions:
-                        current_evaluation.dimensions.append(registry._resolve_identifier(unit_type))
+                    next_unit_type = registry._resolve_reverse_foreign_key(unit_type, dimension.via_next)
+                    if next_unit_type not in next_evaluations:
+                        next_evaluations[next_unit_type] = DimensionBundle(unit_type=unit_type, dimensions=[], measures=[])
+                    next_evaluations[next_unit_type].measures.append(dimension.resolved_next)
                 else:
                     next_unit_type = registry._resolve_foreign_key(unit_type, dimension.via_next)
                     if next_unit_type not in next_evaluations:
-                        next_evaluations[next_unit_type] = DimensionBundle(dimensions=[], measures=[])
+                        next_evaluations[next_unit_type] = DimensionBundle(unit_type=next_unit_type, dimensions=[], measures=[])
                     next_evaluations[next_unit_type]._asdict()[kind].append(dimension.resolved_next)
 
         collect_dimensions(measures, kind='measures')
@@ -267,9 +282,9 @@ class EvaluationStrategy(object):
         collect_dimensions(where_dimensions, kind='dimensions')
 
         # Add required dimension for joining in next unit_types
-        for next_unit_type in next_evaluations:
-            if next_unit_type not in current_evaluation.dimensions:
-                current_evaluation.dimensions.append(next_unit_type.as_private)
+        for dimension_bundle in next_evaluations.values():
+            if dimension_bundle.unit_type not in current_evaluation.dimensions:
+                current_evaluation.dimensions.append(dimension_bundle.unit_type.as_private)
 
         # Step 2: Create optimal joins for current unit_type
 
@@ -309,12 +324,18 @@ class EvaluationStrategy(object):
             foreign_strategy = cls.from_spec(registry=registry, unit_type=foreign_key,
                                              measures=dim_bundle.measures, segment_by=dim_bundle.dimensions,
                                              where=where.via_next(foreign_key.name) if where is not None else None, **opts)
+
+            if foreign_key != dim_bundle.unit_type:  # Reverse foreign key join
+                foreign_key = dim_bundle.unit_type
+                foreign_strategy.unit_type = dim_bundle.unit_type
+
             added = False
             for sub_strategy in evaluations:
-                if foreign_key in sub_strategy.segment_by:
-                    sub_strategy.add_join(foreign_key, foreign_strategy)
-                    added = True
-                    break
+                for dimension in sub_strategy.segment_by:
+                    if isinstance(dimension, _StatisticalUnitIdentifier) and dimension.matches(foreign_key):
+                        sub_strategy.add_join(foreign_key, foreign_strategy)
+                        added = True
+                        break
             if not added:
                 raise RuntimeError("Could not add foreign strategy: {}".format(foreign_strategy))
 

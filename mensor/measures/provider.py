@@ -171,6 +171,8 @@ class MeasureProvider(object):
         return dimensions
 
     def _unit_has_dimension(self, unit_type, dimension):
+        if dimension.partition:
+            return True
         return unit_type.is_unique
 
     # Semantic distinction between standard dimension and partition
@@ -305,9 +307,6 @@ class MeasureProvider(object):
         Returns:
             MeasureDataFrame: A dataframe of the results of the computation.
         """
-
-        if not unit_type.is_unique and len(segment_by) > 0:
-            raise RuntimeError("Cannot segment by any features when rebasing units.")
 
         if not unit_type.is_unique:
             raise NotImplementedError("Unit rebasing for reverse-foreign-key joins is not yet implemented.")  # TODO: Implement!

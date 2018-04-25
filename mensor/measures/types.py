@@ -130,18 +130,21 @@ class _ProvidedFeature(object):
 
 class _ResolvedFeature(object):
 
-    # TODO: Add kind
-
-    def __init__(self, name, via='', providers=[], external=False, private=False):
+    def __init__(self, name, via=None, unit_type=None, kind=None, providers=[],
+                 external=False, private=False):
         self.name = name
-        self.via = via
+        self.via = via or None
+        self.unit_type = unit_type
+        self.kind = kind
         self.providers = providers
         self.external = external
         self.private = private
 
     @property
     def path(self):
-        return '/'.join('/'.join([self.via, self.name]).split('/')[1:])
+        if self.unit_type:
+            return '/'.join([self.unit_type.name, self.via_name])
+        return '*/{}'.format(self.via_name)
 
     @property
     def providers(self):
@@ -162,9 +165,11 @@ class _ResolvedFeature(object):
 
     @property
     def via_next(self):
+        if self.via is None:
+            return
         s = self.via.split('/')
-        if len(s) > 1:
-            return s[1]
+        if len(s) > 0:
+            return s[0]
 
     @property
     def via_name(self):
@@ -173,7 +178,7 @@ class _ResolvedFeature(object):
         return '{}/{}'.format(self.via, self.name)
 
     @property
-    def resolved_next(self):
+    def resolved_next(self):  # TODO: Make more consistent with Constraint API?
         s = self.via.split('/')
         if len(s) > 1:
             return self.__class__(self.name, via='/'.join(s[1:]), providers=self.providers, external=self.external)
@@ -205,7 +210,14 @@ class _ResolvedFeature(object):
 
     def __repr__(self):
         attrs = (['e'] if self.external else []) + (['p'] if self.private else [])
-        return ('/'.join([self.via, self.name]) if self.via is not None else self.name) + ('({})'.format(','.join(attrs)) if attrs else '')
+        return (
+            "Resolved([{}/]{}{}, {})".format(
+                self.unit_type.name if self.unit_type else '*',
+                ('/'.join([self.via, self.name]) if self.via is not None else self.name),
+                ('({})'.format(','.join(attrs)) if attrs else ''),
+                len(self.providers),
+            )
+        )
 
     def __hash__(self):
         return hash(self.name)
@@ -221,10 +233,7 @@ class _ResolvedFeature(object):
             except ValueError:
                 pass
         elif isinstance(other, six.string_types):
-            if (
-                '/'.join([self.via, self.name]) == other or
-                '/'.join(['/'.join(self.via.split('/')[1:]), self.name]) == other
-            ):
+            if self.via_name == other:
                 return True
         else:
             return NotImplemented
@@ -279,6 +288,9 @@ class _StatisticalUnitIdentifier(_ProvidedFeature):
         specific as `unit_type`.
         '''
         if isinstance(unit_type, _StatisticalUnitIdentifier):
+            unit_type = unit_type.name
+        elif isinstance(unit_type, _ResolvedFeature):
+            assert unit_type.kind in ('foreign_key', 'reverse_foreign_key')
             unit_type = unit_type.name
         if reverse:
             return startseq_match(unit_type.split(':'), self.name.split(':'))
@@ -542,4 +554,4 @@ pd.Series.quantilesofscores = quantilesofscores
 
 
 Provision = namedtuple('Provision', ['provider', 'join_prefix', 'measures', 'dimensions'])
-DimensionBundle = namedtuple('DimensionBundle', ['dimensions', 'measures'])
+DimensionBundle = namedtuple('DimensionBundle', ['unit_type', 'dimensions', 'measures'])
