@@ -318,11 +318,41 @@ class _Measure(_ProvidedFeature):
     # binomial distribution: <name>:type = 'binomial', <name>:sum, <name>:sample_size
     # other
 
+    @classmethod
+    def get_all_fields(self, measures, stats=True):
+        fields = []
+        for measure in measures:
+            fields.extend(measure.get_fields(stats=stats))
+        return fields
+
     def __init__(self, name, expr=None, desc=None, unit_agg='sum',
                  distribution='normal', shared=False, provider=None):
         _ProvidedFeature.__init__(self, name, expr=expr, desc=desc, shared=shared, provider=provider)
         self.unit_agg = unit_agg if isinstance(unit_agg, AGG_METHODS) else AGG_METHODS(unit_agg)
         self.distribution = distribution if isinstance(distribution, DISTRIBUTIONS) else DISTRIBUTIONS(distribution)
+
+    def get_fields(self, stats=True):
+        """
+        This is a convenience method for subclasses to use to get the
+        target fields associated with a particular distribution.
+
+        Parameters:
+            stats (bool): Whether this measure is being aggregated into
+                distribution statistics.
+
+        Returns:
+            OrderedDict: A mapping of field suffixes to agg methods to collect
+                in order to reproduce the distribution from which a measure was
+                sampled.
+        """
+        distribution = self.distribution if stats else DISTRIBUTIONS.RAW
+        return OrderedDict([
+            (
+                ("{via_name}|{field_name}" if distribution in (DISTRIBUTIONS.NONE, DISTRIBUTIONS.RAW) else "{via_name}|{dist_name}|{field_name}").format(via_name=self.via_name, field_name=field_name, dist_name=distribution.name.lower()),
+                self.provider._agg_method(agg_type) if self.provider else agg_type
+            )
+            for field_name, agg_type in DISTRIBUTION_FIELDS[distribution].items()
+        ])
 
 
 class AGG_METHODS(Enum):

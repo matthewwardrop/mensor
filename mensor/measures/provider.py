@@ -369,7 +369,7 @@ class MeasureProvider(object):
         joined_measures.difference([d.via_name for d in segment_by_post])
 
         # Check columns in resulting dataframe
-        expected_columns = [f.via_name for f in (list(measures_post) + list(segment_by_post))]
+        expected_columns = _Measure.get_all_fields(measures_post, stats=False) + [f.via_name for f in segment_by_post]
         excess_columns = set(result.columns).difference(expected_columns)
         missing_columns = set(expected_columns).difference(result.columns)
         if len(excess_columns):
@@ -385,12 +385,12 @@ class MeasureProvider(object):
         # All new joined in measures need to be multiplied by the count series of
         # this dataframe, so that they are properly weighted.
         if len(joined_measures) > 0:
-            result = result.apply(lambda col: result['count'] * col if col.name in joined_measures else col, axis=0)
+            result = result.apply(lambda col: result['count|raw'] * col if col.name in joined_measures else col, axis=0)
 
-        # Remove the private 'count:count' measure.
-        # TODO: Make this more general just in case other measures are private for some reason
-        if 'count' in measures_post and measures_post['count'].private:
-            result = result.drop('count', axis=1)
+        # Remove the private 'count\raw' measure along with any other private measures
+        for measure in measures_post:
+            if measure.private:
+                result.drop(list(measure.get_fields(stats=False)), axis=1)
 
         # Resegment after deleting private dimensions as necessary
         if isinstance(result, pd.DataFrame) and len(set(d.via_name for d in segment_by_post if d.private).intersection(result.columns)) > 0:
@@ -565,29 +565,6 @@ class MeasureProvider(object):
         if agg_type not in self._agg_methods:
             raise NotImplementedError("Agg type `{}` is not implemented by `{}`.".format(agg_type, self.__class__))
         return self._agg_methods[agg_type]
-
-    # Measure distribution methods
-    def _get_distribution_fields(self, dist_type):
-        """
-        This is a convenience method for subclasses to use to get the
-        target fields associated with a particular distribution.
-
-        Parameters:
-            dist_type (DISTRIBUTIONS): The distribution type for which to
-                extract target fields and aggregation methods.
-
-        Returns:
-            OrderedDict: A mapping of field suffixes to agg methods to collect
-                in order to reproduce the distribution from which a measure was
-                sampled.
-        """
-        return OrderedDict([
-            (
-                ("|{field_name}" if dist_type == DISTRIBUTIONS.NONE else "|{dist_name}|{field_name}").format(field_name=field_name, dist_name=dist_type.name.lower()),
-                self._agg_method(agg_type)
-            )
-            for field_name, agg_type in DISTRIBUTION_FIELDS[dist_type].items()
-        ])
 
     # Constraint interpretation
     @property

@@ -3,7 +3,7 @@ import numbers
 import pandas as pd
 
 from mensor.measures.provider import MeasureProvider
-from mensor.measures.types import AGG_METHODS
+from mensor.measures.types import AGG_METHODS, DISTRIBUTIONS
 from mensor.measures.context import CONSTRAINTS
 
 
@@ -29,13 +29,9 @@ class PandasMeasureProvider(MeasureProvider):
             col_aggs = {}
             for measure in measures:
                 if not measure.external:
-                    if stats:
-                        for field_suffix, (col_agg, col_map) in self._get_distribution_fields(measure.distribution).items():
-                            col_aggs[measure.via_name + field_suffix] = col_agg
-                            col_maps[measure.name + field_suffix] = measure_map(measure.name, col_map)
-                    else:
-                        col_aggs[measure.via_name] = 'sum'
-                        col_maps[measure.name] = lambda x: x
+                    for field_name, (col_agg, col_map) in measure.get_fields(stats).items():
+                        col_aggs[field_name] = col_agg
+                        col_maps[field_name] = measure_map(measure.name, col_map)
             return col_maps, col_aggs
 
         measure_cols, measure_aggs = measure_maps(measures)
