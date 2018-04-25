@@ -295,7 +295,7 @@ class Constraint(BaseConstraint):
     def from_spec(cls, spec):
         if spec is None:
             return None
-        elif isinstance(spec, Constraint):
+        elif isinstance(spec, BaseConstraint):
             return spec
         elif isinstance(spec, list):
             r = And.from_operands(*[cls.from_spec(s) for s in spec])

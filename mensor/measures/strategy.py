@@ -297,18 +297,18 @@ class EvaluationStrategy(object):
         current_evaluation = DimensionBundle(unit_type=unit_type, dimensions=[], measures=[])
         next_evaluations = {}
 
-        def collect_dimensions(dimensions, kind='measures'):
+        def collect_dimensions(dimensions, kind='measures', for_constraint=False):
             for dimension in dimensions:
                 if not dimension.via_next:
                     current_evaluation._asdict()[kind].append(dimension)
                 elif (  # Handle reverse foreign key joins
-                    kind == 'measures' and
+                    (for_constraint or kind == 'measures') and
                     dimension.via_next in registry.reverse_foreign_keys_for_unit(unit_type)
                 ):
                     next_unit_type = registry._resolve_reverse_foreign_key(unit_type, dimension.via_next)
                     if next_unit_type not in next_evaluations:
                         next_evaluations[next_unit_type] = DimensionBundle(unit_type=unit_type, dimensions=[], measures=[])
-                    next_evaluations[next_unit_type].measures.append(dimension.resolved_next)
+                    next_evaluations[next_unit_type]._asdict()[kind].append(dimension.resolved_next)
                 else:
                     next_unit_type = registry._resolve_foreign_key(unit_type, dimension.via_next)
                     if next_unit_type not in next_evaluations:
@@ -317,7 +317,7 @@ class EvaluationStrategy(object):
 
         collect_dimensions(measures, kind='measures')
         collect_dimensions(segment_by, kind='dimensions')
-        collect_dimensions(where_dimensions, kind='dimensions')
+        collect_dimensions(where_dimensions, kind='dimensions', for_constraint=True)
 
         # Add required dimension for joining in next unit_types
         for dimension_bundle in next_evaluations.values():
@@ -388,8 +388,11 @@ class EvaluationStrategy(object):
 
         for dimension in where.scoped_applicable_dimensions:
             if dimension not in segment_by:
-                index = strategy.segment_by.index(dimension)
-                strategy.segment_by[index] = strategy.segment_by[index].as_private
+                try:
+                    index = strategy.segment_by.index(dimension)
+                    strategy.segment_by[index] = strategy.segment_by[index].as_private
+                except ValueError:
+                    raise ValueError("Could not find dependency for where clause `{}`. This is most likely because you attempted to have conditional joins spanning foreign_key and reverse_foreign_key joins, which does not make sense.".format(dimension))
 
         # Step 5: Return EvaluationStrategy, and profit.
 
