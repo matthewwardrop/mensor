@@ -3,6 +3,7 @@
 # TODO: metrics.for_segment(Segment/Target instance).measures.evaluate('bookings/trains')
 #
 # TODO: metrics.measures.booking_value.evaluate(segment_by='test')
+import logging
 import itertools
 from collections import OrderedDict
 
@@ -308,63 +309,56 @@ class MeasureProvider(object):
             MeasureDataFrame: A dataframe of the results of the computation.
         """
 
-        if not unit_type.is_unique:
-            raise NotImplementedError("Unit rebasing for reverse-foreign-key joins is not yet implemented.")  # TODO: Implement!
-
-        post_joins = [j for j in joins if not j.compatible]
-        joins = [j for j in joins if j.compatible]
+        # Split joins into compatible and incompatible joins; 'joins_pre' and
+        # 'joins_post' (so-called because compatible joins occur before any
+        # computation in this method).
+        joins_pre = [j for j in joins if j.compatible]
+        joins_post = [j for j in joins if not j.compatible]
 
         # If there are post-joins, we will need to add the 'count' measure
-        # (assuming it has not already been requested).
-        if len(post_joins) > 0 and 'count' not in measures:
+        # (assuming it has not already been requested), so that we can weight
+        # post-joins appropriately.
+        if len(joins_post) > 0 and 'count' not in measures:
             count_measure = self.measures['count'].as_private
             measures[count_measure] = count_measure
 
-        # If there are post-joins and where constraints, some of the constraints
-        # may need to be applied after joins. As such, we split the where
-        # constraints into where_prejoin and where_postjoin.
-        def resolvable_pre_join(constraint):
-            for dimension in constraint.dimensions:
-                if dimension not in itertools.chain(self.identifiers, self.dimensions, self.measures):
-                    return False
-            return True
+        # If there are post-joins, we need to ensure that the pre- operations
+        # that happen within the `._evaluate` method do not suppress prematurely
+        # private fields that are necessary to later join in the post-joins.
+        # We therefore modify the privacy of fields for the `._evaluate` stage
+        # depending on whether they are needed later. We also suppress and
+        # external fields not provided by pre-joins, so that `._evaluate`
+        # instances need not concern themselves with them.
 
-        where_prejoin = []
-        where_postjoin = []
-        if len(post_joins) > 0 and where:
-            if where.kind is CONSTRAINTS.AND:
-                for op in where.operands:
-                    if resolvable_pre_join(op):
-                        where_prejoin.append(op)
-                    else:
-                        where_postjoin.append(op)
-            else:
-                if resolvable_pre_join(where):
-                    where_prejoin.append(where)
-                else:
-                    where_postjoin.append(where)
-        else:
-            where_prejoin = where
-        where_prejoin = And.from_operands(where_prejoin)
-        where_postjoin = And.from_operands(where_postjoin)
+        # Moreover, if there are post-joins and where constraints, some of the constraints
+        # may need to be applied after post-joins. As such, we split the where
+        # constraints into where_pre and where_post.
+        measures_pre, segment_by_pre, where_pre, measures_post, segment_by_post, where_post = (
+            self._compat_fields_split(measures, segment_by, where, joins_post=joins_post)
+        )
 
-        # Evaluate the requested measures from this MeasureProvider
+        # Allow MeasureProvider instance to evaluate all pre- computations.
         result = self._evaluate(
             unit_type,
-            measures,
-            where=where_prejoin,
-            segment_by=segment_by,
-            joins=joins,
-            stats=stats,
+            measures_pre,
+            segment_by=segment_by_pre,
+            where=where_pre,
+            joins=joins_pre,
+            stats=stats and len(joins_post) == 0,
             covariates=covariates,
             **opts
         )
 
+        # if len(joins_post) > 0:
+        #     raise RuntimeError
+        if len(joins_post) == 0:
+            return result
+
         # Join in precomputed incompatible joins
-        # TODO: Clean-up how joined measures are detected
+        # TODO: Clean-up how joined measures are detected (remembering measure fields have suffixes)
         joined_measures = set()
-        if len(post_joins) > 0:
-            for join in post_joins:
+        if len(joins_post) > 0:
+            for join in joins_post:
                 joined_measures.update(join.object.columns)
                 result = result.merge(
                     join.object,
@@ -372,29 +366,39 @@ class MeasureProvider(object):
                     right_on=join.right_on,
                     how=join.how
                 )
-        joined_measures.difference(segment_by)
+        joined_measures.difference([d.via_name for d in segment_by_post])
+
+        # Check columns in resulting dataframe
+        expected_columns = [f.via_name for f in (list(measures_post) + list(segment_by_post))]
+        excess_columns = set(result.columns).difference(expected_columns)
+        missing_columns = set(expected_columns).difference(result.columns)
+        if len(excess_columns):
+            logging.warning('Data has excessive columns: {}. Removing...'.format(excess_columns))
+            result = result.drop(excess_columns, axis=1)
+        if len(missing_columns):
+            raise RuntimeError('Data is missing columns: {}.'.format(excess_columns))
 
         # Apply post-join constraints
-        if where_postjoin:
-            raise NotImplementedError("Post-join generic where clauses not implemented yet.")
+        #if where_post:
+        #    raise NotImplementedError("Post-join generic where clauses not implemented yet.")
 
         # All new joined in measures need to be multiplied by the count series of
         # this dataframe, so that they are properly weighted.
         if len(joined_measures) > 0:
-            result = result.apply(lambda col: result['count|count'] * col if col.name in joined_measures else col, axis=0)
+            result = result.apply(lambda col: result['count'] * col if col.name in joined_measures else col, axis=0)
 
         # Remove the private 'count:count' measure.
         # TODO: Make this more general just in case other measures are private for some reason
-        if 'count' in measures and measures['count'].private:
-            result = result.drop('count|count', axis=1)
+        if 'count' in measures_post and measures_post['count'].private:
+            result = result.drop('count', axis=1)
 
         # Resegment after deleting private dimensions as necessary
-        if isinstance(result, pd.DataFrame) and len(set(d.name for d in segment_by if d.private).intersection(result.columns)) > 0:
+        if isinstance(result, pd.DataFrame) and len(set(d.via_name for d in segment_by_post if d.private).intersection(result.columns)) > 0:
             result = (
                 result
-                .drop([d.name for d in segment_by if d.private], axis=1)
+                .drop([d.via_name for d in segment_by_post if d.private], axis=1)
             )
-            segment_by = [x.via_name for x in segment_by if not x.private]
+            segment_by = [x.via_name for x in segment_by_post if not x.private]
             if len(segment_by):
                 result = result.groupby(segment_by).sum().reset_index()
             else:
@@ -403,6 +407,81 @@ class MeasureProvider(object):
         if isinstance(result, pd.Series):
             return MeasureSeries(result)
         return MeasureDataFrame(result)
+
+    def _compat_fields_split(self, measures, segment_by, where, joins_post=None):
+        """
+        This method splits measures and segment_by dictionaries into two,
+        corresponding to pre- and post- computation. The pre- field modify
+        private statuses to prevent loss of join keys, and suppress
+        external fields in joins_post. The second set are remove all features
+        that were private in the pre- computation phase.
+
+        It also splits where constraints such that constraints are applied
+        as early as possible while still being semantically correct.
+        """
+        if len(joins_post) == 0:
+            return measures, segment_by, where, None, None, None
+
+        join_post_fields = []  # TODO: Use dictionaries for performance
+        for join in joins_post:
+            join_post_fields.extend([m.as_via(join.unit_type.name) for m in join.measures])
+            join_post_fields.extend([d.as_via(join.unit_type.name) for d in join.dimensions])
+
+        join_left_post_keys = list(itertools.chain(*[  # TODO: Use dictionaries for performance
+            join.left_on
+            for join in joins_post
+        ]))
+
+        join_right_post_keys = list(itertools.chain(*[  # TODO: Use dictionaries for performance
+            join.right_on
+            for join in joins_post
+        ]))
+
+        # Process measures and dimensions
+        def features_split(features, extra_public_keys=[]):
+            pre = {}
+            post = {}
+
+            for feature in features:
+                if feature.external and feature in join_post_fields:
+                    post[feature] = feature
+                    continue
+                if feature.private and feature in (join_left_post_keys + extra_public_keys):
+                    pre[feature.as_public] = feature.as_public
+                else:
+                    pre[feature] = feature
+                if not pre[feature].private:
+                    post[feature] = feature
+
+            return pre, post
+
+        measures_pre, measures_post = features_split(measures, ['count'])
+        segment_by_pre, segment_by_post = features_split(segment_by)
+
+        # Process constraint clauses
+        where_pre = []
+        where_post = []
+
+        def add_constraint(op):
+            if len(set(op.dimensions).intersection([
+                d if isinstance(d, str) else d.via_name
+                for d in (join_post_fields + join_right_post_keys)
+            ])) > 0:
+                where_post.append(op)
+            else:
+                where_pre.append(op)
+
+        if where:
+            if where.kind is CONSTRAINTS.AND:
+                for op in where.operands:
+                    add_constraint(op)
+            else:
+                add_constraint(where)
+
+        where_pre = And.from_operands(where_pre)
+        where_post = And.from_operands(where_post)
+
+        return measures_pre, segment_by_pre, where_pre, measures_post, segment_by_post, where_post
 
     def _evaluate(self, unit_type, measures=None, segment_by=None, where=None,
                   joins=None, stats=True, covariates=False, **opts):
@@ -422,6 +501,7 @@ class MeasureProvider(object):
           in later).
 
         To assist with this, the base MeasureProvider.evaluate function commits to:
+        - Preparing all values passed to _evaluate in the native data types of mensor.
         - Filtering down any external measures / dimensions to those that are needed
           for compatible joins.
         - Filtering any constraints down to those that can be applied within the

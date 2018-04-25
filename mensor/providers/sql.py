@@ -98,25 +98,29 @@ class SQLMeasureProvider(MeasureProvider):
         assert db_client is not None, "Must specify an (Omniduct-compatible) database client."
 
         MeasureProvider.__init__(self, *args, **kwargs)
-        self._sql = sql
+        self.__sql = sql
         self.db_client = db_client
         self.dialect = DIALECTS[dialect]
 
         self.add_measure('count', shared=True, distribution=None)
 
-    @property
-    def sql(self):
-        return self._sql
+    def _sql(self, measures, segment_by, where, joins):
+        return self.__sql
 
-    def _get_measures_sql(self, measures, joins):
+    def _get_measures_sql(self, measures, joins, stats, covariates):
         aggs = []
+        if covariates:
+            raise NotImplementedError('covariates is not yet implemented in SQL provider')
 
         for measure in measures:
             if measure == 'count':
-                aggs.append('SUM(1) AS "count|sum"')
-                aggs.append('SUM(1) AS "count|count"')
+                if stats:
+                    aggs.append('SUM(1) AS "count|sum"')
+                    aggs.append('SUM(1) AS "count|count"')
+                else:
+                    aggs.append('SUM(1) AS "count|raw"')
             elif not measure.external and not measure.private:
-                for field_suffix, col_map in self._get_distribution_fields(measure.distribution).items():
+                for field_suffix, col_map in self._get_distribution_fields(measure.distribution if stats else DISTRIBUTIONS.RAW).items():
                     aggs.append(
                         '{col_op} AS "{field_name}{field_suffix}"'.format(
                             col_op=col_map('"base_query".{}'.format(measure.expr)),
@@ -174,9 +178,9 @@ class SQLMeasureProvider(MeasureProvider):
 
         return dims
 
-    def _get_ir(self, unit_type, measures=None, segment_by=None, where=None, joins=None, via=None, **opts):
+    def _get_ir(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
         sql = TEMPLATE.render(
-            base_sql=self.sql,
+            base_sql=self._sql(measures=measures, segment_by=segment_by, where=where, joins=joins),
             provider=self,
             dimensions=self._get_dimensions_sql(segment_by, joins),
             measures=self._get_measures_sql(measures, joins),
@@ -185,15 +189,14 @@ class SQLMeasureProvider(MeasureProvider):
             filter=' AND '.join(where) if where else '',
             positional_groupby=self.dialect.POSITIONAL_GROUPBY
         )
-        return sql
-
-    def get_sql(self, *args, **kwargs):
-        sql = self.get_ir(*args, **kwargs)
         if self.dialect.QUOTE_COL != '"':
             sql = sql.replace('"', self.dialect.QUOTE_COL)
         return sql
 
-    def _evaluate(self, unit_type, measures=None, segment_by=None, where=None, joins=None, **opts):
+    def get_sql(self, *args, **kwargs):
+        return self.get_ir(*args, **kwargs)
+
+    def _evaluate(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
         return self.db_client.query(self.get_sql(
             unit_type,
             measures=measures,
@@ -213,11 +216,7 @@ class SQLMeasureProvider(MeasureProvider):
 
 class SQLTableMeasureProvider(SQLMeasureProvider):
 
-    def __init__(self, *args, **kwargs):
-        SQLMeasureProvider.__init__(self, *args, **kwargs)
-
-    @property
-    def sql(self):
+    def _sql(self, measures, segment_by, where, joins):
         if len(self.identifiers) + len(self.dimensions) + len(self.measures) == 0:
             raise RuntimeError("No columns identified in table.")
         return TEMPLATE_TABLE.render(

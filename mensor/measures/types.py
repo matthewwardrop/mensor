@@ -106,9 +106,21 @@ class _ProvidedFeature(object):
         return dim
 
     @property
+    def as_internal(self):
+        dim = copy.copy(self)
+        dim.external = False
+        return dim
+
+    @property
     def as_private(self):
         dim = copy.copy(self)
         dim.private = True
+        return dim
+
+    @property
+    def as_public(self):
+        dim = copy.copy(self)
+        dim.private = False
         return dim
 
     def as_via(self, *vias):
@@ -318,6 +330,7 @@ class AGG_METHODS(Enum):
     SUM = 'sum'
     SQUARE_SUM = 'sqsum'
     COUNT = 'count'
+    MEDIAN = 'median'
 
 
 class MEASURE_AGG_METHODS(Enum):
@@ -327,12 +340,16 @@ class MEASURE_AGG_METHODS(Enum):
 
 
 class DISTRIBUTIONS(Enum):
+    RAW = 'raw'
     NONE = None
     NORMAL = 'normal'
     BINOMIAL = 'binomial'
 
 
 DISTRIBUTION_FIELDS = {
+    DISTRIBUTIONS.RAW: OrderedDict([
+        ('raw', AGG_METHODS.SUM)
+    ]),
     DISTRIBUTIONS.NONE: OrderedDict([
         ('sum', AGG_METHODS.SUM),
         ('count', AGG_METHODS.COUNT)
