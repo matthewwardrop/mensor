@@ -60,7 +60,8 @@ class PandasMeasureProvider(MeasureProvider):
             .rename(
                 columns={dimension.expr: dimension.name for dimension in self.measures},
             )
-            .assign(count=1, **measure_cols)
+            .assign(count=1)
+            .assign(**measure_cols)  # May include count, so don't roll up into above.
         )
 
         if where:

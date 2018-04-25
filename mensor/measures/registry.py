@@ -210,7 +210,7 @@ class MeasureRegistry(object):
 
         unit_type = self._resolve_identifier(unit_type)
         feature_index = feature_index or getattr(self._cache, kind + 's', {})
-        via = unit_type.name
+        via = ''
         features = None
 
         private = external = False
@@ -227,26 +227,28 @@ class MeasureRegistry(object):
                 s = s[1:]
             via_suffix = '/'.join(s[:-1])
             feature = s[-1]
+            eff_unit_type = unit_type
             if via_suffix:
-                unit_type = self._resolve_identifier(s[-2])
-                via += '/' + via_suffix
+                eff_unit_type = self._resolve_identifier(s[-2])
+                via += ('/' + via_suffix) if via else via_suffix
 
             # Look for feature starting from most specific unit key with specificity
             # less than or equal to provided unit_type. Unit_type name length
             # is a good proxy for this.
             for avail_unit_type in sorted(feature_index, key=lambda x: len(x.name), reverse=True):
                 if kind in ('foreign_key', 'reverse_foreign_key'):  # Handle self-lookup of hierarchical types. TODO: Do this more intelligently
-                    if avail_unit_type.matches(unit_type):
+                    if avail_unit_type.matches(eff_unit_type):
                         for feature_candidate in sorted(feature_index[avail_unit_type], key=lambda x: len(x.name), reverse=True):
                             if feature_candidate.matches(feature):
                                 features = feature_index[avail_unit_type][feature_candidate]
+                                feature = feature_candidate
                                 break
                 else:  # Handle all other cases.
-                    if avail_unit_type.matches(unit_type) and feature in feature_index[avail_unit_type]:
+                    if avail_unit_type.matches(eff_unit_type) and feature in feature_index[avail_unit_type]:
                         features = feature_index[avail_unit_type][feature]
                         break
             if features is None:
-                raise ValueError("No such {} `{}` for unit type `{}`.".format(kind, feature, unit_type))
+                raise ValueError("No such {} `{}` for unit type `{}`.".format(kind, feature, eff_unit_type))
 
         elif isinstance(feature, _ProvidedFeature):
             features = [feature]
@@ -254,7 +256,7 @@ class MeasureRegistry(object):
         else:
             raise ValueError("Invalid type for {}: `{}`".format(kind, feature.__class__))
 
-        r = _ResolvedFeature(feature.name if isinstance(feature, _ProvidedFeature) else feature, via, providers=[d.provider for d in features])
+        r = _ResolvedFeature(feature.name if isinstance(feature, _ProvidedFeature) else feature, via=via, unit_type=unit_type, kind=kind, providers=[d.provider for d in features])
         if external:
             r = r.as_external
         if private:
@@ -308,10 +310,11 @@ class MeasureRegistry(object):
             list<Provision>: A list of `Provision` instances which optimally
                 supply the requested measures and dimensions.
         """
+
         # [Provision(provider, measures, dimensions), ...]
         unit_type = self._resolve_identifier(unit_type)
-        measures = {measure: self._resolve_measure(unit_type, measure) for measure in measures}
-        dimensions = {dimension: self._resolve_dimension(unit_type, dimension) for dimension in dimensions}
+        measures = {self._resolve_measure(unit_type, measure): self._resolve_measure(unit_type, measure) for measure in measures}
+        dimensions = {self._resolve_dimension(unit_type, dimension): self._resolve_dimension(unit_type, dimension) for dimension in dimensions}
 
         def get_next_provider(unit_type, measures, dimensions, primary=False):
             provider_count = Counter()
@@ -337,13 +340,7 @@ class MeasureRegistry(object):
         dimension_count = len(measures) + len(dimensions)
         while dimension_count > 0:
             p = get_next_provider(unit_type, measures, dimensions, primary=True if require_primary and len(provisions) == 0 else False)
-
-            # Support reverse foreign key use case, where unit type is not `unit_type`
-            supported_measures = [measure for measure in measures if measure in p.measures]
-            if len(supported_measures) > 0 and '/' in supported_measures[0].via:
-                join_prefix = self._resolve_identifier(supported_measures[0].via.split('/')[1]).name
-            else:
-                join_prefix = unit_type.name
+            join_prefix = unit_type.name
 
             provisions.append(Provision(
                 p,
