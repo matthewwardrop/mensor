@@ -55,7 +55,6 @@ class EvaluationStrategy(object):
 
         return unconstrained
 
-
     @property
     def matched_unit_type(self):
         for identifier in sorted(self.provider.identifiers, key=lambda x: len(x.name)):
@@ -302,8 +301,8 @@ class EvaluationStrategy(object):
                 if not dimension.via_next:
                     current_evaluation._asdict()[kind].append(dimension)
                 elif (  # Handle reverse foreign key joins
-                    (for_constraint or kind == 'measures') and
-                    dimension.via_next in registry.reverse_foreign_keys_for_unit(unit_type)
+                    (for_constraint or kind == 'measures')
+                    and dimension.via_next in registry.reverse_foreign_keys_for_unit(unit_type)
                 ):
                     next_unit_type = registry._resolve_reverse_foreign_key(unit_type, dimension.via_next)
                     if next_unit_type not in next_evaluations:
