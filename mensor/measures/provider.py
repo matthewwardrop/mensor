@@ -151,8 +151,8 @@ class MeasureProvider(object):
     def dimensions(self, dimensions):
         self._dimensions = self._get_dimensions_from_specs(_Dimension, dimensions)
 
-    def add_dimension(self, name=None, desc=None, expr=None, shared=False):
-        dimension = _Dimension(name, desc=desc, expr=expr, shared=shared, provider=self)
+    def add_dimension(self, name=None, desc=None, expr=None, shared=False, requires_constraint=False):
+        dimension = _Dimension(name, desc=desc, expr=expr, shared=shared, requires_constraint=requires_constraint, provider=self)
         self._dimensions[dimension] = dimension
         return self
 
@@ -181,8 +181,8 @@ class MeasureProvider(object):
     # Note that partitions also appears as dimensions, since they are
     # functionally equivalent in most cases.
     # (partitions behave differently in joins TODO: document this difference)
-    def add_partition(self, name=None, desc=None, expr=None):
-        dimension = _Dimension(name, desc=desc, expr=expr, shared=True, partition=True, provider=self)
+    def add_partition(self, name=None, desc=None, expr=None, requires_constraint=False):
+        dimension = _Dimension(name, desc=desc, expr=expr, shared=True, partition=True, requires_constraint=requires_constraint, provider=self)
         self._dimensions[dimension] = dimension
         return self
 
