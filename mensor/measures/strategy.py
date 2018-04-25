@@ -162,6 +162,20 @@ class EvaluationStrategy(object):
             )
         )
 
+        if self.where:
+            self.segment_by.extend(
+                (
+                    dimension.as_external.as_via(strategy.unit_type).as_private
+                    if strategy.unit_type != self.unit_type else
+                    dimension.as_external.as_private
+                )
+                for dimension in strategy.segment_by
+                if (
+                    dimension.as_via(strategy.unit_type) not in self.segment_by
+                    and dimension.as_via(strategy.unit_type) in self.where.dimensions
+                )
+            )
+
         # Set joined flag
         strategy.is_joined = True
 
