@@ -132,7 +132,7 @@ class EvaluationStrategyTests(unittest.TestCase):
                 raise ValueError("Invalid unit type detected.")
 
     def test_reverse_joins(self):
-        es = self.registry.evaluate('person:seller', measures=['transaction/value'], segment_by=['name'],
+        es = self.registry.evaluate('person:seller', measures=['transaction/value'], segment_by=['name', 'person:seller'],
                                     where={'*/ds': '2018-01-01'}, dry_run=True)
 
         # TODO: uncomment privacy when strategy updated to use dictionaries
@@ -142,6 +142,8 @@ class EvaluationStrategyTests(unittest.TestCase):
         # self.assertTrue(es.segment_by['transaction/value'].external)
         self.assertIn('name', es.segment_by)
         # self.assertFalse(es.segment_by['name'].private)
+        self.assertIn('person', es.segment_by)  # TODO: Expose as person:seller?
+        # self.assertFalse(es.segment_by['person'].private)
 
         # Join information
         rjoin = es.joins[0]

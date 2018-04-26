@@ -319,8 +319,9 @@ class EvaluationStrategy(object):
 
         # Add required dimension for joining in next unit_types
         for dimension_bundle in next_evaluations.values():
-            if dimension_bundle.unit_type not in current_evaluation.dimensions:
-                current_evaluation.dimensions.append(dimension_bundle.unit_type.as_private)
+            fk = registry._resolve_foreign_key(unit_type, dimension_bundle.unit_type)
+            if fk not in current_evaluation.dimensions:
+                current_evaluation.dimensions.append(fk.as_private)
 
         # Step 2: Create optimal joins for current unit_type
 
