@@ -308,6 +308,7 @@ class MeasureProvider(object):
         Returns:
             MeasureDataFrame: A dataframe of the results of the computation.
         """
+        from mensor.providers.pandas import PandasMeasureProvider  # We need this for some pandas transformations
 
         # Split joins into compatible and incompatible joins; 'joins_pre' and
         # 'joins_post' (so-called because compatible joins occur before any
@@ -372,37 +373,20 @@ class MeasureProvider(object):
         expected_columns = _Measure.get_all_fields(measures_post, stats=False) + [f.via_name for f in segment_by_post]
         excess_columns = set(result.columns).difference(expected_columns)
         missing_columns = set(expected_columns).difference(result.columns)
-        if len(excess_columns):
-            logging.warning('Data has excessive columns: {}. Removing...'.format(excess_columns))
+        if len(excess_columns):  # remove any unnecessary columns (such as now used join keys)
             result = result.drop(excess_columns, axis=1)
         if len(missing_columns):
             raise RuntimeError('Data is missing columns: {}.'.format(excess_columns))
-
-        # Apply post-join constraints
-        # if where_post:
-        #     raise NotImplementedError("Post-join generic where clauses not implemented yet.")
 
         # All new joined in measures need to be multiplied by the count series of
         # this dataframe, so that they are properly weighted.
         if len(joined_measures) > 0:
             result = result.apply(lambda col: result['count|raw'] * col if col.name in joined_measures else col, axis=0)
 
-        # Remove the private 'count\raw' measure along with any other private measures
-        for measure in measures_post:
-            if measure.private:
-                result.drop(list(measure.get_fields(stats=False)), axis=1)
-
-        # Resegment after deleting private dimensions as necessary
-        if isinstance(result, pd.DataFrame) and len(set(d.via_name for d in segment_by_post if d.private).intersection(result.columns)) > 0:
-            result = (
-                result
-                .drop([d.via_name for d in segment_by_post if d.private], axis=1)
-            )
-            segment_by = [x.via_name for x in segment_by_post if not x.private]
-            if len(segment_by):
-                result = result.groupby(segment_by).sum().reset_index()
-            else:
-                result = result.sum()
+        result = PandasMeasureProvider._finalise_dataframe(
+            df=result, measures=measures_post, segment_by=segment_by_post,
+            where=where_post, stats=stats
+        )
 
         if isinstance(result, pd.Series):
             return MeasureSeries(result)
@@ -424,8 +408,8 @@ class MeasureProvider(object):
 
         join_post_fields = []  # TODO: Use dictionaries for performance
         for join in joins_post:
-            join_post_fields.extend([m.as_via(join.unit_type.name) for m in join.measures])
-            join_post_fields.extend([d.as_via(join.unit_type.name) for d in join.dimensions])
+            join_post_fields.extend([m.as_via(join.join_prefix) for m in join.measures])
+            join_post_fields.extend([d.as_via(join.join_prefix) for d in join.dimensions])
 
         join_left_post_keys = list(itertools.chain(*[  # TODO: Use dictionaries for performance
             join.left_on
@@ -455,7 +439,7 @@ class MeasureProvider(object):
 
             return pre, post
 
-        measures_pre, measures_post = features_split(measures, ['count'])
+        measures_pre, measures_post = features_split(measures, [self.resolve('count')])
         segment_by_pre, segment_by_post = features_split(segment_by)
 
         # Process constraint clauses
