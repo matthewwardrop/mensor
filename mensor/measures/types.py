@@ -1,6 +1,5 @@
 import copy
 import re
-import uuid
 from collections import namedtuple, OrderedDict
 from enum import Enum
 
@@ -42,7 +41,7 @@ class Join(object):
     @name.setter
     def name(self, name):
         if name is None:
-            name = str(uuid.uuid1())
+            name = "join_{}_{}".format(self.provider.name, self.unit_type.name)
         self._name = name
 
 
