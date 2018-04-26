@@ -146,6 +146,11 @@ class _ProvidedFeature(object):
     def __lt__(self, other):
         return self.name.__lt__(other.name)
 
+    # Methods to assist MeasureProviders with handling data field names
+    @property
+    def fieldname(self):
+        return self.via_name
+
 
 class _ResolvedFeature(object):
 
@@ -325,20 +330,17 @@ class _Measure(_ProvidedFeature):
     # binomial distribution: <name>:type = 'binomial', <name>:sum, <name>:sample_size
     # other
 
-    @classmethod
-    def get_all_fields(self, measures, stats=True):
-        fields = []
-        for measure in measures:
-            fields.extend(measure.get_fields(stats=stats))
-        return fields
-
     def __init__(self, name, expr=None, desc=None, unit_agg='sum',
                  distribution='normal', shared=False, provider=None):
         _ProvidedFeature.__init__(self, name, expr=expr, desc=desc, shared=shared, provider=provider)
         self.unit_agg = unit_agg if isinstance(unit_agg, AGG_METHODS) else AGG_METHODS(unit_agg)
         self.distribution = distribution if isinstance(distribution, DISTRIBUTIONS) else DISTRIBUTIONS(distribution)
 
-    def get_fields(self, stats=True):
+    @property
+    def fieldname(self):
+        return '{}|raw'.format(self.via_name)
+
+    def get_fields(self, stats=True, unit_agg=False, for_pandas=False):
         """
         This is a convenience method for subclasses to use to get the
         target fields associated with a particular distribution.
@@ -352,14 +354,27 @@ class _Measure(_ProvidedFeature):
                 in order to reproduce the distribution from which a measure was
                 sampled.
         """
+        assert not (unit_agg and stats)
+        if for_pandas:
+            from mensor.providers.pandas import PandasMeasureProvider
+            provider = PandasMeasureProvider
+        else:
+            provider = self.provider
         distribution = self.distribution if stats else DISTRIBUTIONS.RAW
         return OrderedDict([
             (
                 ("{via_name}|{field_name}" if distribution in (DISTRIBUTIONS.NONE, DISTRIBUTIONS.RAW) else "{via_name}|{dist_name}|{field_name}").format(via_name=self.via_name, field_name=field_name, dist_name=distribution.name.lower()),
-                self.provider._agg_method(agg_type) if self.provider else agg_type
+                provider._agg_method(self.unit_agg if unit_agg else agg_type) if self.provider else agg_type
             )
             for field_name, agg_type in DISTRIBUTION_FIELDS[distribution].items()
         ])
+
+    @classmethod
+    def get_all_fields(self, measures, stats=True, unit_agg=False, for_pandas=False):
+        fields = []
+        for measure in measures:
+            fields.extend(measure.get_fields(stats=stats, unit_agg=unit_agg, for_pandas=for_pandas))
+        return fields
 
 
 class AGG_METHODS(Enum):

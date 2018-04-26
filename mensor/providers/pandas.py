@@ -5,10 +5,13 @@ import pandas as pd
 from mensor.measures.provider import MeasureProvider
 from mensor.measures.types import AGG_METHODS, DISTRIBUTIONS
 from mensor.measures.context import CONSTRAINTS
+from mensor.measures.types import _Measure
 
 
 class PandasMeasureProvider(MeasureProvider):
-    # TODO: Handle unit-aggregation
+    # The base MeasureProvider.evaluate method requires the ability to interact
+    # with pandas dataframes, and so some of the functionality of this class is
+    # exposed as classmethods for use externally.
 
     def __init__(self, name, data=None, **kwargs):
         MeasureProvider.__init__(self, name, **kwargs)
@@ -21,66 +24,131 @@ class PandasMeasureProvider(MeasureProvider):
     def _evaluate(self, unit_type, measures, where=None, segment_by=None,
                   stats=True, covariates=False, **opts):
 
-        def measure_map(name, op):
-            return lambda df: op(df[name])
+        assert not any(measure.external for measure in measures)
+        assert not any(dimension.external for dimension in segment_by)
 
-        def measure_maps(measures):
-            col_maps = {}
-            col_aggs = {}
-            for measure in measures:
-                if not measure.external:
-                    for field_name, (col_agg, col_map) in measure.get_fields(stats).items():
-                        col_aggs[field_name] = col_agg
-                        col_maps[field_name] = measure_map(measure.name, col_map)
-            return col_maps, col_aggs
-
-        measure_cols, measure_aggs = measure_maps(measures)
-
-        d = (
+        df = (
             self.data
-            .rename(
-                columns={identifier.expr: identifier.name for identifier in self.identifiers},
-            )
-            .rename(
-                columns={dimension.expr: dimension.name for dimension in self.dimensions},
-            )
-            .rename(
-                columns={dimension.expr: dimension.name for dimension in self.measures},
-            )
             .assign(count=1)
-            .assign(**measure_cols)  # May include count, so don't roll up into above.
+            [[measure.expr for measure in measures] + [dimension.expr for dimension in segment_by]]
+            .rename(
+                columns={dimension.expr: dimension.fieldname for dimension in segment_by},
+            )
+            .rename(
+                columns={measure.expr: measure.fieldname for measure in self.measures},
+            )
         )
 
+        return (
+            self._finalise_dataframe(
+                df, measures=measures, segment_by=segment_by, where=where,
+                stats=stats, unit_agg=not unit_type.is_unique
+            )
+        )
+
+    @classmethod
+    def _finalise_dataframe(cls, df, measures, segment_by, where, stats=False, unit_agg=True):
+        """
+        This method finalises a `pandas.DataFrame` instance by applying the
+        following steps:
+
+        0) Apply any constraints provided in `where`.
+        1) Ensuring that all private measures and dimensions are removed.
+        2) Performing an aggregation over the measures segmented by the features
+           identified in `segment_by`. This is done in one of two ways:
+           A) if `unit_agg` is `True`, a unit aggregation is performed.
+           B) otherwise, a regular (summed) aggregation is performed. If `stats`
+              is `True`, statistics about this aggregation are retained.
+        3) If a unit aggregation was performed, and `stats` is True, repeat the
+           aggregation to get (trivial) statistics.
+
+        This method is implemented as a classmethod to make it accessible to
+        `MeasureProvider.evaluate`, which provides the generic implementation
+        for incompatible `MeasureProvider` instances using pandas DataFrames.
+        """
+        # Apply constraints
         if where:
-            d = d.query(self._constraint_str(where))
+            df = cls._apply_where_to_df(df, where)
 
-        segments = [x.via_name for x in segment_by if not x.external]
+        # Remove any private measures and segments
+        for measure in measures:
+            if measure.private:
+                df.drop(list(measure.get_fields(stats=False)), axis=1)
+        for dimension in segment_by:
+            if dimension.private:
+                df.drop(dimension.via_name, axis=1)
 
-        if len(d) == 0:
-            d = pd.DataFrame([], columns=segments + list(measure_aggs))
-        elif len(segments) > 0 and len(measure_aggs) > 0:
-            d = (
-                d
-                .groupby(segments)
+        measures = [m for m in measures if not m.private]
+        segment_by = [s for s in segment_by if not s.private]
+
+        if unit_agg:
+            df = cls._dataframe_agg(df, measures, segment_by, unit_agg=True, stats=False)
+
+        if not unit_agg or stats:
+            df = cls._dataframe_agg(df, measures, segment_by, unit_agg=False, stats=stats)
+
+        return df
+
+    @classmethod
+    def _dataframe_agg(cls, df, measures, segment_by, unit_agg=False, stats=False):
+
+        measure_cols = _Measure.get_all_fields(measures, unit_agg=unit_agg, stats=stats)
+        segment_by_cols = [s.fieldname for s in segment_by]
+
+        if len(df) == 0:
+            return pd.DataFrame([], columns=measure_cols + segment_by_cols)
+
+        measure_cols, measure_aggs = cls._measure_agg_maps(
+            measures, external=True, unit_agg=unit_agg, stats=stats
+        )
+
+        if isinstance(df, pd.Series):
+            df = df.to_frame().T
+
+        if len(segment_by_cols) > 0 and len(measure_cols) > 0:
+            df = (
+                df
+                .assign(**measure_cols)
+                [segment_by_cols + list(measure_cols)]
+                .groupby(segment_by_cols)
                 .agg(measure_aggs)
                 .reset_index()
             )
         elif len(segment_by) > 0:
-            d = (
-                d
+            df = (
+                df
                 .assign(dummy=1)
-                .groupby(segments)
+                .groupby(segment_by)
                 .sum()
                 .reset_index()
-                [segments]
+                [segment_by]
             )
         else:
-            d = d[list(measure_cols)].agg(measure_aggs)
+            df = df.assign(**measure_cols)[list(measure_cols)].agg(measure_aggs)
 
-        return d
+        return df
+
+    # Aggregation related methods
+    @classmethod
+    def _measure_agg_maps(cls, measures, external=True, unit_agg=False, stats=False):
+        def measure_map(name, op):
+            return lambda df: op(df[name])
+        col_maps = {}
+        col_aggs = {}
+        for measure in measures:
+            if not external and measure.external:
+                continue
+            for field_name, (col_agg, col_map) in measure.get_fields(stats=stats, unit_agg=unit_agg, for_pandas=True).items():
+                col_aggs[field_name] = col_agg
+                col_maps[field_name] = measure_map(measure.fieldname, col_map)
+        return col_maps, col_aggs
 
     @property
     def _agg_methods(self):
+        return self._get_agg_methods()
+
+    @classmethod
+    def _get_agg_methods(cls):
         return {
             AGG_METHODS.SUM: ('sum', lambda x: x),
             AGG_METHODS.MEAN: ('mean', lambda x: x),
@@ -88,25 +156,42 @@ class PandasMeasureProvider(MeasureProvider):
             AGG_METHODS.COUNT: ('sum', lambda x: 1)
         }
 
-    @property
-    def _constraint_maps(self):
+    @classmethod
+    def _agg_method(cls, agg_type):
+        """
+        Parameters:
+            agg_type (AGG_METHOD): The agg method type for which to extract
+                its representation for this instance of MeasureProvider.
+        """
+        if not isinstance(agg_type, AGG_METHODS):
+            raise ValueError("Agg type `{}` is not a valid instance of `mensor.measures.types.AGG_METHODS`.".format(agg_type))
+        if agg_type not in cls._get_agg_methods():
+            raise NotImplementaedError("Agg type `{}` is not implemented by `{}`.".format(agg_type, self.__class__))
+        return cls._get_agg_methods()[agg_type]
+
+    #  Constraint related methods
+    @classmethod
+    def _apply_where_to_df(cls, df, where):
+        return df[cls._get_constraint_for_df(df, where)]
+
+    @classmethod
+    def _get_constraint_for_df(cls, df, constraint):
+        return cls._get_constraint_maps()[constraint.kind](df, constraint)
+
+    @classmethod
+    def _get_constraint_maps(cls):
+        from functools import reduce
+        from operator import eq, gt, ge, lt, le, and_, or_
         return {
-            CONSTRAINTS.AND: lambda x: '({})'.format(' & '.join(self._constraint_str(o) for o in x.operands)),
-            CONSTRAINTS.OR: lambda x: '({})'.format(' | '.join(self._constraint_str(o) for o in x.operands)),
-            CONSTRAINTS.EQUALITY: lambda x: '{} == {}'.format(x.field, self._constraint_quote(x.value)),
-            CONSTRAINTS.INEQUALITY_GT: lambda x: '{} > {}'.format(x.field, self._constraint_quote(x.value)),
-            CONSTRAINTS.INEQUALITY_GTE: lambda x: '{} >= {}'.format(x.field, self._constraint_quote(x.value)),
-            CONSTRAINTS.INEQUALITY_LT: lambda x: '{} < {}'.format(x.field, self._constraint_quote(x.value)),
-            CONSTRAINTS.INEQUALITY_LTE: lambda x: '{} <= {}'.format(x.field, self._constraint_quote(x.value)),
+            CONSTRAINTS.AND: lambda df, c: reduce(and_, (cls._get_constraint_for_df(df, op) for op in c.operands)),
+            CONSTRAINTS.OR: lambda df, c: reduce(or_, (cls._get_constraint_for_df(df, op) for op in c.operands)),
+            CONSTRAINTS.EQUALITY: lambda df, c: eq(df[c.field], c.value),
+            CONSTRAINTS.INEQUALITY_GT: lambda df, c: gt(df[c.field], c.value),
+            CONSTRAINTS.INEQUALITY_GTE: lambda df, c: ge(df[c.field], c.value),
+            CONSTRAINTS.INEQUALITY_LT: lambda df, c: lt(df[c.field], c.value),
+            CONSTRAINTS.INEQUALITY_LTE: lambda df, c: le(df[c.field], c.value),
         }
 
-    def _constraint_str(self, constraint):
-        return self._constraint_map(constraint.kind)(constraint)
-
-    def _constraint_quote(cls, value):
-        "This method quotes values appropriately."
-        if isinstance(value, str):
-            return '"{}"'.format(value)  # TODO: Worry about quotes in string.
-        elif isinstance(value, numbers.Number):
-            return str(value)
-        raise ValueError("Pandas backend does not support quoting objects of type: `{}`".format(type(value)))
+    @property
+    def _constraint_maps(self):
+        return self._get_constraint_maps()
