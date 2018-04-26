@@ -47,11 +47,12 @@ class PandasMeasureProviderTests(unittest.TestCase):
         )
 
         self.assertGreater(len(df), 0)
-        self.assertTrue(
-            set(df.columns) == set([
-                'person:seller/age:norm:count',
-                'person:seller/age:norm:sos',
-                'person:seller/age:norm:sum',
+        self.assertEqual(
+            set(df.columns),
+            set([
+                'person:seller/age|normal|count',
+                'person:seller/age|normal|sos',
+                'person:seller/age|normal|sum',
                 'person:buyer/name'
             ])
         )

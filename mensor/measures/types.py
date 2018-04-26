@@ -21,10 +21,11 @@ class Join(object):
     # TODO: Review Join API (esp. which arguments are essential, etc)
 
     def __init__(self, provider, unit_type, left_on, right_on, object,
-                 compatible=False, name=None, measures=None, dimensions=None,
+                 compatible=False, join_prefix=None, name=None, measures=None, dimensions=None,
                  how='left'):
         self.provider = provider
         self.unit_type = unit_type
+        self.join_prefix = join_prefix
         self.left_on = left_on
         self.right_on = right_on
         self.name = name
@@ -125,8 +126,14 @@ class _ProvidedFeature(object):
 
     def as_via(self, *vias):
         vias = [via.name if isinstance(via, _ProvidedFeature) else via for via in vias]
+        # In the case that we are adding a single via, there cannot be two identical components
+        # in a row (patterns can repeat in some instances). To simplify code
+        # elsewhere, we suppress via in the case that len(vias) == 1 and the provided
+        # via is alrady in the via path.
+        current_vias = self.via.split('/') if self.via is not None else []
+        if len(vias) == 1 and (not vias[0] or len(current_vias) > 0 and vias[0] == current_vias[-1]):
+            return self
         dim = copy.copy(self)
-        current_vias = dim.via.split('/') if self.via is not None else []
         dim.via = '/'.join(vias + current_vias)
         return dim
 

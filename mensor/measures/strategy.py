@@ -30,7 +30,7 @@ class EvaluationStrategy(object):
 
         # Join parameters
         self.is_joined = False
-        self.join_on_left = join_on_left or [self.unit_type.name]
+        self.join_on_left = join_on_left
         self.join_on_right = join_on_right or [self.matched_unit_type.name]
         self.joins = joins or []
         self.join_prefix = join_prefix or self.unit_type.name
@@ -57,14 +57,7 @@ class EvaluationStrategy(object):
 
     @property
     def matched_unit_type(self):
-        for identifier in sorted(self.provider.identifiers, key=lambda x: len(x.name)):
-            if identifier.matches(self.unit_type):
-                return identifier
-
-    def reverse_matched_unit_type(self, strategy):
-        for identifier in sorted(self.provider.identifiers, key=lambda x: len(x.name), reverse=True):
-            if identifier.matches(strategy.unit_type, reverse=False):
-                return identifier
+        return self.provider.identifier_for_unit(self.unit_type)
 
     @property
     def strategy_type(self):
@@ -114,17 +107,13 @@ class EvaluationStrategy(object):
         else:
             strategy.segment_by[strategy.segment_by.index(join_unit_type)].private = False
 
-        if strategy.strategy_type is STRATEGY_TYPE.UNIT_REBASE:
-            strategy.join_on_left = [self.reverse_matched_unit_type(strategy).name]
-            strategy.join_on_right = [strategy.unit_type.name]
-        else:
-            strategy.join_on_left = [strategy.unit_type.name]
-            strategy.join_on_right = [strategy.matched_unit_type.name]
+        strategy.join_on_left = [self_unit_type.name]
+        strategy.join_on_right = [join_unit_type.name]
 
         # Add common partitions to join keys
         common_partitions = list(
-            set(self.provider.partitions_for_unit(self.matched_unit_type.name))
-            .intersection(strategy.provider.partitions_for_unit(strategy.unit_type.name))
+            set(self.provider.partitions_for_unit(self_unit_type.name))
+            .intersection(strategy.provider.partitions_for_unit(join_unit_type.name))
         )
 
         for partition in common_partitions:
@@ -140,8 +129,8 @@ class EvaluationStrategy(object):
         # Add measures and segmentations in parent from join
         self.measures.extend(
             (
-                measure.as_external.as_via(strategy.unit_type)
-                if strategy.unit_type != self.unit_type else
+                measure.as_external.as_via(strategy.join_prefix)
+                if strategy.join_prefix != self.unit_type else
                 measure.as_external
             )
             for measure in strategy.measures
@@ -150,8 +139,8 @@ class EvaluationStrategy(object):
 
         self.segment_by.extend(
             (
-                dimension.as_external.as_via(strategy.unit_type)
-                if strategy.unit_type != self.unit_type else
+                dimension.as_external.as_via(strategy.join_prefix)
+                if strategy.join_prefix != self.unit_type else
                 dimension.as_external
             )
             for dimension in strategy.segment_by
@@ -164,19 +153,22 @@ class EvaluationStrategy(object):
         if self.where:
             self.segment_by.extend(
                 (
-                    dimension.as_external.as_via(strategy.unit_type).as_private
-                    if strategy.unit_type != self.unit_type else
+                    dimension.as_external.as_via(strategy.join_prefix).as_private
+                    if strategy.join_prefix != self.unit_type else
                     dimension.as_external.as_private
                 )
                 for dimension in strategy.segment_by
                 if (
-                    dimension.as_via(strategy.unit_type) not in self.segment_by
-                    and dimension.as_via(strategy.unit_type) in self.where.dimensions
+                    dimension.as_via(strategy.join_prefix) not in self.segment_by  # Check for cases when joining in fields for the same join_prefix == unit_type
+                    and dimension.as_via(strategy.join_prefix) in self.where.dimensions
                 )
             )
 
         # Set joined flag
         strategy.is_joined = True
+
+        if strategy.join_prefix == self.join_prefix:
+            strategy.join_prefix = None
 
         self.joins.append(strategy)
         return self
@@ -211,6 +203,7 @@ class EvaluationStrategy(object):
                 return Join(
                     provider=self.provider,
                     unit_type=self.unit_type,
+                    join_prefix=self.join_prefix,
                     left_on=self.join_on_left,
                     right_on=self.join_on_right,
                     measures=self.measures,
@@ -252,12 +245,18 @@ class EvaluationStrategy(object):
             )
 
             if as_join:
-                evaluated = evaluated.add_prefix('{}/'.format(self.join_prefix))
+                if self.join_prefix:
+                    evaluated = evaluated.add_prefix('{}/'.format(self.join_prefix))
+                    right_on = ['{}/{}'.format(self.join_prefix, j) for j in self.join_on_right]
+                else:
+                    right_on = self.join_on_right
+
                 return Join(
                     provider=self.provider,
                     unit_type=self.unit_type,
+                    join_prefix=self.join_prefix,
                     left_on=self.join_on_left,
-                    right_on=['{}/{}'.format(self.join_prefix, j) for j in self.join_on_right],
+                    right_on=right_on,
                     measures=self.measures,
                     dimensions=self.segment_by,
                     how=self.join_type,

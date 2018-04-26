@@ -287,6 +287,12 @@ class MeasureRegistry(object):
             pass
         raise ValueError("No such dimension {} for unit type '{}'".format(dimension, unit_type))
 
+    def _find_primary_key_for_unit_type(self, unit_type):
+        for identifier in sorted(self._cache.identifiers, key=lambda x: len(x.name), reverse=True):
+            if identifier.matches(unit_type) and any(i.is_primary for i in self._cache.identifiers[identifier]):
+                return identifier
+        raise RuntimeError("No primary key exists for unit_type `{}`.".format(unit_type))
+
     def _find_optimal_provision(self, unit_type, measures, dimensions, require_primary=True):
         """
         This method takes a set of meaures and dimensions for a given unit_type,
@@ -323,10 +329,12 @@ class MeasureRegistry(object):
 
             provider = None
             if primary:
+                primary_unit_type = self._find_primary_key_for_unit_type(unit_type)
                 # Try to extract primary provider from used providers, or locate
                 # one in the unit_type registry.
-                for p, _ in provider_count.most_common() + [(ut.provider, 0) for ut in self._cache.identifiers[unit_type.name] if ut.is_primary]:
-                    if p.identifier_for_unit(unit_type).is_primary:
+
+                for p, _ in provider_count.most_common() + [(ut.provider, 0) for ut in self._cache.identifiers[primary_unit_type.name] if ut.is_primary]:
+                    if p.identifiers.get(primary_unit_type) and p.identifiers.get(primary_unit_type).is_primary:
                         provider = p
                         break
                 if provider is None:
