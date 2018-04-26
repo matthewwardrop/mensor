@@ -35,7 +35,7 @@ class PandasMeasureProvider(MeasureProvider):
                 columns={dimension.expr: dimension.fieldname for dimension in segment_by},
             )
             .rename(
-                columns={measure.expr: measure.fieldname for measure in self.measures},
+                columns={measure.expr: measure.fieldname for measure in measures},
             )
         )
 
@@ -118,10 +118,10 @@ class PandasMeasureProvider(MeasureProvider):
             df = (
                 df
                 .assign(dummy=1)
-                .groupby(segment_by)
+                .groupby(segment_by_cols)
                 .sum()
                 .reset_index()
-                [segment_by]
+                [segment_by_cols]
             )
         else:
             df = df.assign(**measure_cols)[list(measure_cols)].agg(measure_aggs)
