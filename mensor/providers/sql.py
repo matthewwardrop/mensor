@@ -24,7 +24,8 @@ FROM (
 {%- for join in joins %}
 JOIN  (
     {{join.object|indent(width=4)}}
-) "{{join.name}}" ON
+) "{{join.name}}"
+ON
 {%- for field in join.left_on -%}
 {% if loop.index0 > 0 %} AND{% endif %} "{{ provider.name }}_query"."{{provider.resolve(field, kind='dimension').expr}}" = "{{join.name}}"."{{join.right_on[loop.index0]}}"
 {%- endfor -%}
@@ -141,10 +142,10 @@ class SQLMeasureProvider(MeasureProvider):
             if not dimension.external:
                 field_map[dimension.via_name] = '"{}_query"."{}"'.format(self.name, dimension.expr)
 
-        for j in joins:
-            for dimension in j.dimensions:
-                if dimension not in j.right_on:
-                    field_map[dimensions[dimension.via_name].via_name] = '"{}"."{}"'.format(j.name, dimension.via_name)
+        for join in joins:
+            for dimension in join.dimensions:
+                if dimension not in join.right_on:
+                    field_map[dimension.as_via(join.unit_type)] = '"{}"."{}"'.format(join.name, dimension.via_name)
 
         return field_map
 
@@ -183,15 +184,16 @@ class SQLMeasureProvider(MeasureProvider):
 
     def _get_dimensions_sql(self, dimensions, joins):
         dims = []
-
         for dimension in dimensions:
             if not dimension.external and not dimension.private:
                 dims.append('"{n}_query"."{m}" AS "{o}"'.format(n=self.name, m=dimension.expr, o=dimension.via_name))
 
-        for j in joins:
-            for dimension in j.dimensions:
-                if not dimension.private and dimension not in j.right_on:
-                    dims.append('"{n}"."{m}" AS "{o}"'.format(n=j.name, m=dimension.via_name, o=dimensions[dimension].via_name))
+        for join in joins:
+            for dimension in join.dimensions:
+                if not dimension.private and dimension not in join.right_on:
+                    dims.append('"{n}"."{m}" AS "{o}"'.format(
+                        n=join.name, m=dimension.via_name, o=dimension.as_via(join.unit_type))
+                    )
 
         return dims
 
