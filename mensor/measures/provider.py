@@ -204,7 +204,7 @@ class MeasureProvider(object):
 
     def add_measure(self, name=None, expr=None, desc=None, shared=False, unit_agg='sum', distribution='normal'):
         measure = _Measure(name, expr=expr, desc=desc, shared=shared, unit_agg=unit_agg, distribution=distribution, provider=self)
-        assert measure.unit_agg in self._agg_methods, "This provider does not support aggregating at the unit level using '{}'.".format(measure.measure_agg)
+        assert measure.unit_agg in self._agg_methods, "This provider does not support aggregating at the unit level using '{}'.".format(measure.unit_agg)
         self._measures[measure] = measure
         return self
 
@@ -379,8 +379,8 @@ class MeasureProvider(object):
             raise RuntimeError('Data is missing columns: {}.'.format(excess_columns))
 
         # Apply post-join constraints
-        #if where_post:
-        #    raise NotImplementedError("Post-join generic where clauses not implemented yet.")
+        # if where_post:
+        #     raise NotImplementedError("Post-join generic where clauses not implemented yet.")
 
         # All new joined in measures need to be multiplied by the count series of
         # this dataframe, so that they are properly weighted.

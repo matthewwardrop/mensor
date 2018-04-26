@@ -7,17 +7,9 @@ from mensor.measures.provider import MeasureProvider
 from mensor.measures.types import AGG_METHODS
 
 # TODO: Consider using sqlalchemy to generate SQL
-
+# TODO: Consider creating an option to produce SQL using WITH clauses
+#       subqueries are safer, but perhaps less readable
 TEMPLATE = jinja2.Template("""
-WITH
-    "base_query" AS (
-        {{base_sql|indent(width=8)}}
-    )
-    {%- for join in joins %}
-    , "{{join.name}}" AS (
-        {{join.object|indent(width=8)}}
-    )
-    {%- endfor %}
 SELECT
     {%- for dimension in dimensions %}
     {% if loop.index0 > 0 %}, {% endif %}{{ dimension }}
@@ -25,17 +17,21 @@ SELECT
     {%- for measure in measures %}
     {% if dimensions or loop.index0 > 0 %}, {% endif %}{{ measure }}
     {%- endfor %}
-FROM base_query
+FROM (
+    {{ _sql |indent(width=4)}}
+) "{{ provider.name }}_query"
 {%- if joins|length > 0 %}
 {%- for join in joins %}
-JOIN "{{join.name}}" ON
+JOIN  (
+    {{join.object|indent(width=4)}}
+) "{{join.name}}" ON
 {%- for field in join.left_on -%}
-{% if loop.index0 > 0 %} AND{% endif %} "base_query"."{{provider.resolve(field, kind='dimension').expr}}" = "{{join.name}}"."{{join.right_on[loop.index0]}}"
+{% if loop.index0 > 0 %} AND{% endif %} "{{ provider.name }}_query"."{{provider.resolve(field, kind='dimension').expr}}" = "{{join.name}}"."{{join.right_on[loop.index0]}}"
 {%- endfor -%}
 {%- endfor %}
 {%- endif %}
 {%- if constraints %}
-WHERE {{constraints}}
+WHERE {{ constraints }}
 {%- endif %}
 {%- if groupby|length > 0 %}
 GROUP BY
@@ -43,7 +39,7 @@ GROUP BY
 {%- if positional_groupby %}
 {%- if loop.index > 1 %},{% endif %} {{ gb }}
 {%- else %}
-    {% if loop.index > 1 %},{% endif %} {{gb}}
+    {% if loop.index > 1 %},{% endif %} {{ gb }}
 {%- endif %}
 {%- endfor %}
 {%- endif %}
@@ -72,7 +68,7 @@ class SQLDialect(object):
 
     POSITIONAL_GROUPBY = True
 
-    MEASURE_AGG_METHODS = {
+    AGG_METHODS = {
         AGG_METHODS.SUM: lambda x: "SUM({})".format(x),
         AGG_METHODS.MEAN: lambda x: "AVG({})".format(x),
         AGG_METHODS.SQUARE_SUM: lambda x: "SUM(POW({}, 2)".format(x),
@@ -82,13 +78,13 @@ class SQLDialect(object):
     @classmethod
     def constraint_maps(cls):
         return {
-            CONSTRAINTS.AND: lambda m, x, f: '({})'.format(' AND '.join(m(o, f) for o in x.operands)),
-            CONSTRAINTS.OR: lambda m, x, f: '({})'.format(' OR '.join(m(o, f) for o in x.operands)),
-            CONSTRAINTS.EQUALITY: lambda m, x, f: "{} = {}".format(f[x.field], cls.qv(x.value)),
-            CONSTRAINTS.INEQUALITY_GT: lambda m, x, f: "{} > {}".format(f[x.field], cls.qv(x.value)),
-            CONSTRAINTS.INEQUALITY_GTE: lambda m, x, f: "{} >= {}".format(f[x.field], cls.qv(x.value)),
-            CONSTRAINTS.INEQUALITY_LT: lambda m, x, f: "{} < {}".format(f[x.field], cls.qv(x.value)),
-            CONSTRAINTS.INEQUALITY_LTE: lambda m, x, f: "{} <= {}".format(f[x.field], cls.qv(x.value)),
+            CONSTRAINTS.AND: lambda m, w, f: '({})'.format(' AND '.join(m(o, f) for o in w.operands)),
+            CONSTRAINTS.OR: lambda m, w, f: '({})'.format(' OR '.join(m(o, f) for o in w.operands)),
+            CONSTRAINTS.EQUALITY: lambda m, w, f: "{} = {}".format(f[w.field], cls.qv(w.value)),
+            CONSTRAINTS.INEQUALITY_GT: lambda m, w, f: "{} > {}".format(f[w.field], cls.qv(w.value)),
+            CONSTRAINTS.INEQUALITY_GTE: lambda m, w, f: "{} >= {}".format(f[w.field], cls.qv(w.value)),
+            CONSTRAINTS.INEQUALITY_LT: lambda m, w, f: "{} < {}".format(f[w.field], cls.qv(w.value)),
+            CONSTRAINTS.INEQUALITY_LTE: lambda m, w, f: "{} <= {}".format(f[w.field], cls.qv(w.value)),
         }
 
     @classmethod
@@ -130,23 +126,22 @@ class SQLMeasureProvider(MeasureProvider):
         assert db_client is not None, "Must specify an (Omniduct-compatible) database client."
 
         MeasureProvider.__init__(self, *args, **kwargs)
-        self.__sql = sql
+        self._base_sql = sql
         self.db_client = db_client
         self.dialect = DIALECTS[dialect]
 
         self.add_measure('count', shared=True, distribution=None)
 
-    def _sql(self, measures, segment_by, where, joins):
-        return self.__sql
+    def _sql(*args, **opts):
+        return self._base_sql
 
     def _dimension_map(self, dimensions, joins):
         field_map = {}
         for dimension in dimensions:
             if not dimension.external:
-                field_map[dimension.via_name] = '"base_query"."{}"'.format(dimension.expr)
+                field_map[dimension.via_name] = '"{}_query"."{}"'.format(self.name, dimension.expr)
 
         for j in joins:
-            print(dimensions, j.dimensions)
             for dimension in j.dimensions:
                 if dimension not in j.right_on:
                     field_map[dimensions[dimension.via_name].via_name] = '"{}"."{}"'.format(j.name, dimension.via_name)
@@ -169,7 +164,7 @@ class SQLMeasureProvider(MeasureProvider):
                 for field_suffix, col_map in self._get_distribution_fields(measure.distribution if stats else DISTRIBUTIONS.RAW).items():
                     aggs.append(
                         '{col_op} AS "{field_name}{field_suffix}"'.format(
-                            col_op=col_map('"base_query".{}'.format(measure.expr)),
+                            col_op=col_map('"{}_query".{}'.format(self.name, measure.expr)),
                             field_name=measure.via_name,
                             field_suffix=field_suffix
                         )
@@ -191,7 +186,7 @@ class SQLMeasureProvider(MeasureProvider):
 
         for dimension in dimensions:
             if not dimension.external and not dimension.private:
-                dims.append('"base_query"."{m}" AS "{o}"'.format(m=dimension.expr, o=dimension.via_name))
+                dims.append('"{n}_query"."{m}" AS "{o}"'.format(n=self.name, m=dimension.expr, o=dimension.via_name))
 
         for j in joins:
             for dimension in j.dimensions:
@@ -211,7 +206,7 @@ class SQLMeasureProvider(MeasureProvider):
                     dims.append(count)
                     count += 1
                 else:
-                    dims.append('"base_query"."{m}"'.format(m=dimension.expr))
+                    dims.append('"{n}_query"."{m}"'.format(n=self.name, m=dimension.expr))
 
         for j in joins:
             for dimension in j.dimensions:
@@ -229,13 +224,13 @@ class SQLMeasureProvider(MeasureProvider):
             return None
         return self._constraint_map(where.kind)(self._get_where_sql, where, field_map)
 
-    def _get_ir(self, unit_type, measures, segment_by, where, joins, via, stats, covariates, **opts):
+    def _get_ir(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
         field_map = self._dimension_map(segment_by, joins)
         sql = TEMPLATE.render(
-            base_sql=self._sql(measures=measures, segment_by=segment_by, where=where, joins=joins),
+            _sql=self._sql(unit_type=unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, stats=stats, covariates=covariates, **opts),
             provider=self,
             dimensions=self._get_dimensions_sql(segment_by, joins),
-            measures=self._get_measures_sql(measures, joins),
+            measures=self._get_measures_sql(measures, joins, stats, covariates),
             groupby=self._get_groupby_sql(segment_by, joins),
             joins=joins,
             constraints=self._get_where_sql(where, field_map),
@@ -259,8 +254,8 @@ class SQLMeasureProvider(MeasureProvider):
         ))
 
     @property
-    def _measure_agg_methods(self):
-        return self.dialect.MEASURE_AGG_METHODS
+    def _agg_methods(self):
+        return self.dialect.AGG_METHODS
 
     @property
     def _constraint_maps(self):
