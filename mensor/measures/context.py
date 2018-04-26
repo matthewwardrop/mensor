@@ -339,11 +339,17 @@ class Constraint(BaseConstraint):
     def kind(self):
         if self.relation == '==':
             return CONSTRAINTS.EQUALITY
-        elif self.relation in ('<', '<=', '>', '>='):
-            return CONSTRAINTS.INEQUALITY
+        elif self.relation == '<':
+            return CONSTRAINTS.INEQUALITY_LT
+        elif self.relation == '<=':
+            return CONSTRAINTS.INEQUALITY_LTE
+        elif self.relation == '>':
+            return CONSTRAINTS.INEQUALITY_GT
+        elif self.relation == '>=':
+            return CONSTRAINTS.INEQUALITY_GTE
         elif self.relation == 'in':
             return CONSTRAINTS.IN
-        raise RuntimeError("Invalid relation detected.")
+        raise RuntimeError("Invalid relation detected {}.".format(self.relation))
 
     # Specification of features affected by this constraint
 
