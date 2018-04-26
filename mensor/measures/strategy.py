@@ -201,6 +201,7 @@ class EvaluationStrategy(object):
         if as_join and compatible:
             try:
                 return Join(
+                    name='{}_{}_join'.format(self.provider.name, self.unit_type),
                     provider=self.provider,
                     unit_type=self.unit_type,
                     join_prefix=self.join_prefix,
