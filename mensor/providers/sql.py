@@ -102,6 +102,14 @@ class SQLDialect(object):
             return str(value)
         raise ValueError("SQL backend does not support quoting objects of type: `{}`".format(type(value)))
 
+    @classmethod
+    def translate_from_mensor_name(cls, mensor_name):
+        return mensor_name
+
+    @classmethod
+    def translate_to_mensor_name(cls, sql_name):
+        return sql_name
+
 
 class PrestoDialect(SQLDialect):
 
@@ -112,6 +120,14 @@ class HiveDialect(SQLDialect):
 
     QUOTE_COL = '`'
     POSITIONAL_GROUPBY = False
+
+    @classmethod
+    def translate_from_mensor_name(cls, mensor_name):
+        return mensor_name.replace('/', '___')
+
+    @classmethod
+    def translate_to_mensor_name(cls, sql_name):
+        return sql_name.replace('___', '/')
 
 
 DIALECTS = {
@@ -133,7 +149,7 @@ class SQLMeasureProvider(MeasureProvider):
 
         self.add_measure('count', shared=True, distribution=None)
 
-    def _sql(*args, **opts):
+    def _sql(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
         return self._base_sql
 
     def _dimension_map(self, dimensions, joins):
@@ -157,17 +173,16 @@ class SQLMeasureProvider(MeasureProvider):
         for measure in measures:
             if measure == 'count':
                 if stats:
-                    aggs.append('SUM(1) AS "count|sum"')
-                    aggs.append('SUM(1) AS "count|count"')
+                    aggs.append('SUM(1) AS "{}"'.format(self.dialect.translate_from_mensor_name("count|sum")))
+                    aggs.append('SUM(1) AS "{}"'.format(self.dialect.translate_from_mensor_name("count|count")))
                 else:
-                    aggs.append('SUM(1) AS "count|raw"')
+                    aggs.append('SUM(1) AS "{}"'.format(self.dialect.translate_from_mensor_name("count|raw")))
             elif not measure.external and not measure.private:
                 for field_suffix, col_map in self._get_distribution_fields(measure.distribution if stats else DISTRIBUTIONS.RAW).items():
                     aggs.append(
-                        '{col_op} AS "{field_name}{field_suffix}"'.format(
+                        '{col_op} AS "{f}"'.format(
                             col_op=col_map('"{}_query".{}'.format(self.name, measure.expr)),
-                            field_name=measure.via_name,
-                            field_suffix=field_suffix
+                            f=self.dialect.translate_from_mensor_name(measure.via_name + field_suffix),
                         )
                     )
 
@@ -176,7 +191,11 @@ class SQLMeasureProvider(MeasureProvider):
                 if not measure.private:
                     suffixes = list(self._get_distribution_fields(measure.distribution))
                     aggs.extend([
-                        'SUM("{n}"."{m}{s}") AS "{o}{s}"'.format(n=join.name, m=measure.via_name, o=measures[measure].via_name, s=suffix)
+                        'SUM("{n}"."{m}") AS "{o}"'.format(
+                            n=join.name,
+                            m=self.dialect.translate_from_mensor_name(measure.via_name + suffix),
+                            o=self.dialect.translate_from_mensor_name(measures[measure].via_name + suffix),
+                        )
                         for suffix in suffixes
                     ])
 
@@ -186,13 +205,16 @@ class SQLMeasureProvider(MeasureProvider):
         dims = []
         for dimension in dimensions:
             if not dimension.external and not dimension.private:
-                dims.append('"{n}_query"."{m}" AS "{o}"'.format(n=self.name, m=dimension.expr, o=dimension.via_name))
+                dims.append('"{n}_query"."{m}" AS "{o}"'.format(
+                    n=self.name, m=dimension.expr, o=self.dialect.translate_from_mensor_name(dimension.via_name))
+                )
 
         for join in joins:
             for dimension in join.dimensions:
                 if not dimension.private and dimension not in join.right_on:
                     dims.append('"{n}"."{m}" AS "{o}"'.format(
-                        n=join.name, m=dimension.via_name, o=dimension.as_via(join.unit_type))
+                        n=join.name, m=dimension.via_name,
+                        o=self.dialect.translate_from_mensor_name(dimension.as_via(join.unit_type).via_name))
                     )
 
         return dims
@@ -227,7 +249,6 @@ class SQLMeasureProvider(MeasureProvider):
         return self._constraint_map(where.kind)(self._get_where_sql, where, field_map)
 
     def _get_ir(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
-        field_map = self._dimension_map(segment_by, joins)
         sql = TEMPLATE.render(
             _sql=self._sql(unit_type=unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, stats=stats, covariates=covariates, **opts),
             provider=self,
@@ -235,8 +256,8 @@ class SQLMeasureProvider(MeasureProvider):
             measures=self._get_measures_sql(measures, joins, stats, covariates),
             groupby=self._get_groupby_sql(segment_by, joins),
             joins=joins,
-            constraints=self._get_where_sql(where, field_map),
-            positional_groupby=self.dialect.POSITIONAL_GROUPBY
+            constraints=self._get_where_sql(where, self._dimension_map(segment_by, joins)),
+            positional_groupby=self.dialect.POSITIONAL_GROUPBY,
         )
         if self.dialect.QUOTE_COL != '"':
             sql = sql.replace('"', self.dialect.QUOTE_COL)
@@ -246,7 +267,7 @@ class SQLMeasureProvider(MeasureProvider):
         return self.get_ir(*args, **kwargs)
 
     def _evaluate(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
-        return self.db_client.query(self.get_sql(
+        df = self.db_client.query(self.get_sql(
             unit_type,
             measures=measures,
             segment_by=segment_by,
@@ -254,6 +275,8 @@ class SQLMeasureProvider(MeasureProvider):
             joins=joins,
             **opts
         ))
+        df.columns = [self.dialect.translate_to_mensor_name(col) for col in df.columns]
+        return df
 
     @property
     def _agg_methods(self):
