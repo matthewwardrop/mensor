@@ -318,7 +318,8 @@ class Constraint(BaseConstraint):
         if isinstance(value, str):
             m = re.match('^[<>][=]?', value)
             if m:
-                return cls(field, relation=m.group(0), value=value, generic=generic)
+                relation = m.group(0)
+                return cls(field, relation=relation, value=value[len(relation):], generic=generic)
             return Constraint(field, '==', value, generic=generic)
         elif isinstance(value, tuple):
             if all(isinstance(v, str) and re.match('^[<>][=]?', v) for v in value):
