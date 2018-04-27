@@ -151,7 +151,7 @@ class HiveDialect(SQLDialect):
 
     @classmethod
     def column_decode(cls, column_name):
-        return col.replace('+', ':').replace('+', '/')
+        return column_name.replace('+', ':').replace('+', '/')
 
 
 DIALECTS = {
