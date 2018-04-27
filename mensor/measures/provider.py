@@ -350,43 +350,40 @@ class MeasureProvider(object):
             **opts
         )
 
-        # if len(joins_post) > 0:
-        #     raise RuntimeError
-        if len(joins_post) == 0:
-            return result
-
-        # Join in precomputed incompatible joins
-        # TODO: Clean-up how joined measures are detected (remembering measure fields have suffixes)
-        joined_measures = set()
         if len(joins_post) > 0:
-            for join in joins_post:
-                joined_measures.update(join.object.columns)
-                result = result.merge(
-                    join.object,
-                    left_on=join.left_on,
-                    right_on=join.right_on,
-                    how=join.how
-                )
-        joined_measures.difference([d.via_name for d in segment_by_post])
 
-        # Check columns in resulting dataframe
-        expected_columns = _Measure.get_all_fields(measures_post, stats=False) + [f.via_name for f in segment_by_post]
-        excess_columns = set(result.columns).difference(expected_columns)
-        missing_columns = set(expected_columns).difference(result.columns)
-        if len(excess_columns):  # remove any unnecessary columns (such as now used join keys)
-            result = result.drop(excess_columns, axis=1)
-        if len(missing_columns):
-            raise RuntimeError('Data is missing columns: {}.'.format(excess_columns))
+            # Join in precomputed incompatible joins
+            # TODO: Clean-up how joined measures are detected (remembering measure fields have suffixes)
+            joined_measures = set()
+            if len(joins_post) > 0:
+                for join in joins_post:
+                    joined_measures.update(join.object.columns)
+                    result = result.merge(
+                        join.object,
+                        left_on=join.left_on,
+                        right_on=join.right_on,
+                        how=join.how
+                    )
+            joined_measures.difference([d.via_name for d in segment_by_post])
 
-        # All new joined in measures need to be multiplied by the count series of
-        # this dataframe, so that they are properly weighted.
-        if len(joined_measures) > 0:
-            result = result.apply(lambda col: result['count|raw'] * col if col.name in joined_measures else col, axis=0)
+            # Check columns in resulting dataframe
+            expected_columns = _Measure.get_all_fields(measures_post, stats=False) + [f.via_name for f in segment_by_post]
+            excess_columns = set(result.columns).difference(expected_columns)
+            missing_columns = set(expected_columns).difference(result.columns)
+            if len(excess_columns):  # remove any unnecessary columns (such as now used join keys)
+                result = result.drop(excess_columns, axis=1)
+            if len(missing_columns):
+                raise RuntimeError('Data is missing columns: {}.'.format(excess_columns))
 
-        result = PandasMeasureProvider._finalise_dataframe(
-            df=result, measures=measures_post, segment_by=segment_by_post,
-            where=where_post, stats=stats
-        )
+            # All new joined in measures need to be multiplied by the count series of
+            # this dataframe, so that they are properly weighted.
+            if len(joined_measures) > 0:
+                result = result.apply(lambda col: result['count|raw'] * col if col.name in joined_measures else col, axis=0)
+
+            result = PandasMeasureProvider._finalise_dataframe(
+                df=result, measures=measures_post, segment_by=segment_by_post,
+                where=where_post, stats=stats
+            )
 
         if isinstance(result, pd.Series):
             return MeasureSeries(result)
