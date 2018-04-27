@@ -1,3 +1,4 @@
+import itertools
 import numbers
 
 import pandas as pd
@@ -27,16 +28,19 @@ class PandasMeasureProvider(MeasureProvider):
         assert not any(measure.external for measure in measures)
         assert not any(dimension.external for dimension in segment_by)
 
-        df = (
+        raw_data = (
             self.data
             .assign(count=1)
-            [[measure.expr for measure in measures] + [dimension.expr for dimension in segment_by]]
-            .rename(
-                columns={dimension.expr: dimension.fieldname for dimension in segment_by},
-            )
-            .rename(
-                columns={measure.expr: measure.fieldname for measure in measures},
-            )
+        )
+
+        df = (
+            pd.DataFrame()
+            .assign(**{
+                dimension.fieldname(role='dimension'): raw_data[dimension.expr] for dimension in segment_by
+            })
+            .assign(**{
+                measure.fieldname(role='measure'): raw_data[measure.expr] for measure in measures
+            })
         )
 
         return (
@@ -66,6 +70,7 @@ class PandasMeasureProvider(MeasureProvider):
         `MeasureProvider.evaluate`, which provides the generic implementation
         for incompatible `MeasureProvider` instances using pandas DataFrames.
         """
+
         # Apply constraints
         if where:
             df = cls._apply_where_to_df(df, where)
@@ -93,7 +98,7 @@ class PandasMeasureProvider(MeasureProvider):
     def _dataframe_agg(cls, df, measures, segment_by, unit_agg=False, stats=False):
 
         measure_cols = _Measure.get_all_fields(measures, unit_agg=unit_agg, stats=stats)
-        segment_by_cols = [s.fieldname for s in segment_by]
+        segment_by_cols = [s.fieldname(role='dimension') for s in segment_by]
 
         if len(df) == 0:
             return pd.DataFrame([], columns=measure_cols + segment_by_cols)
@@ -140,7 +145,7 @@ class PandasMeasureProvider(MeasureProvider):
                 continue
             for field_name, (col_agg, col_map) in measure.get_fields(stats=stats, unit_agg=unit_agg, for_pandas=True).items():
                 col_aggs[field_name] = col_agg
-                col_maps[field_name] = measure_map(measure.fieldname, col_map)
+                col_maps[field_name] = measure_map(measure.fieldname(role='measure'), col_map)
         return col_maps, col_aggs
 
     @property
@@ -176,10 +181,18 @@ class PandasMeasureProvider(MeasureProvider):
 
     @classmethod
     def _get_constraint_for_df(cls, df, constraint):
-        return cls._get_constraint_maps()[constraint.kind](df, constraint)
+        try:
+            return cls._get_constraint_maps()[constraint.kind](df, constraint)
+        except:
+            raise
 
     @classmethod
     def _get_constraint_maps(cls):
+        """
+        All constraints expect two parameters:
+         - the DataFrame to be constrained
+         - the constraint
+        """
         from functools import reduce
         from operator import eq, gt, ge, lt, le, and_, or_
         return {

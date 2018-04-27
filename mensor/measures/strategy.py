@@ -147,23 +147,12 @@ class EvaluationStrategy(object):
             for dimension in strategy.segment_by
             if (
                 not dimension.private
-                and dimension not in strategy.join_on_right
+                and (
+                    dimension not in strategy.join_on_right
+                    or dimension.implicit
+                )
             )
         )
-
-        if self.where:
-            self.segment_by.extend(
-                (
-                    dimension.as_external.as_via(strategy.join_prefix).as_private
-                    if strategy.join_prefix != self.unit_type else
-                    dimension.as_external.as_private
-                )
-                for dimension in strategy.segment_by
-                if (
-                    dimension.as_via(strategy.join_prefix) not in self.segment_by  # Check for cases when joining in fields for the same join_prefix == unit_type
-                    and dimension.as_via(strategy.join_prefix) in self.where.dimensions
-                )
-            )
 
         # Set joined flag
         strategy.is_joined = True
@@ -285,8 +274,10 @@ class EvaluationStrategy(object):
         where = EvaluationContext.from_spec(unit_type=unit_type.name, spec=where)
         assert where.unit_type == unit_type.name
         where_dimensions = [
-            registry._resolve_dimension(unit_type, dimension).as_private
-            for dimension in where.dimensions
+            (
+                registry._resolve_dimension(unit_type, dimension).as_implicit
+            )
+            for dimension in (where.scoped_constraint.dimensions if where.scoped_constraint else [])
             if dimension not in segment_by
         ]
 
@@ -386,13 +377,10 @@ class EvaluationStrategy(object):
         # Step 4: Mark any resolved where dependencies as private, unless otherwise
         # requested in `segment_by`
 
-        for dimension in where.scoped_applicable_dimensions:
-            if dimension not in segment_by:
-                try:
-                    index = strategy.segment_by.index(dimension)
-                    strategy.segment_by[index] = strategy.segment_by[index].as_private
-                except ValueError:
-                    raise ValueError("Could not find dependency for where clause `{}`. This is most likely because you attempted to have conditional joins spanning foreign_key and reverse_foreign_key joins, which does not make sense.".format(dimension))
+        for dimension in strategy.segment_by:
+            if dimension.implicit and dimension in where.scoped_applicable_dimensions:
+                index = strategy.segment_by.index(dimension)
+                strategy.segment_by[index] = strategy.segment_by[index].as_private
 
         # Step 5: Return EvaluationStrategy, and profit.
 

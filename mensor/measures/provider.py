@@ -373,7 +373,7 @@ class MeasureProvider(object):
             if len(excess_columns):  # remove any unnecessary columns (such as now used join keys)
                 result = result.drop(excess_columns, axis=1)
             if len(missing_columns):
-                raise RuntimeError('Data is missing columns: {}.'.format(excess_columns))
+                raise RuntimeError('Data is missing columns: {}.'.format(missing_columns))
 
             # All new joined in measures need to be multiplied by the count series of
             # this dataframe, so that they are properly weighted.
@@ -418,30 +418,11 @@ class MeasureProvider(object):
             for join in joins_post
         ]))
 
-        # Process measures and dimensions
-        def features_split(features, extra_public_keys=[]):
-            pre = {}
-            post = {}
-
-            for feature in features:
-                if feature.external and feature in join_post_fields:
-                    post[feature] = feature
-                    continue
-                if feature.private and feature in (join_left_post_keys + extra_public_keys):
-                    pre[feature.as_public] = feature.as_public
-                else:
-                    pre[feature] = feature
-                if not pre[feature].private:
-                    post[feature] = feature
-
-            return pre, post
-
-        measures_pre, measures_post = features_split(measures, [self.resolve('count')])
-        segment_by_pre, segment_by_post = features_split(segment_by)
-
         # Process constraint clauses
         where_pre = []
         where_post = []
+
+        print("WHERE:", join_post_fields, join_right_post_keys)
 
         def add_constraint(op):
             if len(set(op.dimensions).intersection([
@@ -461,6 +442,27 @@ class MeasureProvider(object):
 
         where_pre = And.from_operands(where_pre)
         where_post = And.from_operands(where_post)
+
+        # Process measures and dimensions
+        def features_split(features, extra_public_keys=[]):
+            pre = {}
+            post = {}
+
+            for feature in features:
+                if feature.external and feature in join_post_fields:
+                    post[feature] = feature
+                    continue
+                if feature.private and feature in (join_left_post_keys + extra_public_keys + (where_post.dimensions if where_post else [])):
+                    pre[feature.as_public] = feature.as_public
+                else:
+                    pre[feature] = feature
+                if not pre[feature].private:
+                    post[feature] = feature
+
+            return pre, post
+
+        measures_pre, measures_post = features_split(measures, [self.resolve('count')])
+        segment_by_pre, segment_by_post = features_split(segment_by)
 
         return measures_pre, segment_by_pre, where_pre, measures_post, segment_by_post, where_post
 
