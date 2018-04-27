@@ -167,7 +167,7 @@ class ContainerConstraint(BaseConstraint):
 
     def via_next(self, foreign_key):
         # Any None's in this list will cause the new parent object to be unresolvable.
-        n = self.from_operands(*[op.via_next(foreign_key) for op in self.operands], simplify=False)
+        n = self.from_operands(*[op.via_next(foreign_key) for op in self.operands], simplify=False, resolvable=self.resolvable)
         if n is None:
             return None
         if isinstance(n, Or) and len(n.operands) < len(self.operands):
