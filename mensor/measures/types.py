@@ -204,7 +204,7 @@ class _ResolvedFeature(object):
     def resolved_next(self):  # TODO: Make more consistent with Constraint API?
         s = self.via.split('/')
         if len(s) > 1:
-            return self.__class__(self.name, via='/'.join(s[1:]), providers=self.providers, external=self.external)
+            return self.__class__(self.name, via='/'.join(s[1:]), providers=self.providers, external=self.external, private=self.private)
         return self
 
     @property

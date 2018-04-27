@@ -285,8 +285,8 @@ class EvaluationStrategy(object):
         where = EvaluationContext.from_spec(unit_type=unit_type.name, spec=where)
         assert where.unit_type == unit_type.name
         where_dimensions = [
-            registry._resolve_dimension(unit_type, dimension)
-            for dimension in where.scoped_applicable_dimensions
+            registry._resolve_dimension(unit_type, dimension).as_private
+            for dimension in where.dimensions
             if dimension not in segment_by
         ]
 
