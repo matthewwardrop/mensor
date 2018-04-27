@@ -241,9 +241,9 @@ class SQLMeasureProvider(MeasureProvider):
 
         for join in joins:
             for measure in join.measures:
-                field_map[measure.as_via(join.join_prefix).via_name] = '{}.{}'.format(self._col(join.name), self._col(measure.via_name))
+                field_map[measure.as_via(join.join_prefix).via_name] = '{}.{}'.format(self._col(join.name), self._col(measure.fieldname(role='measure')))
             for dimension in join.dimensions:
-                field_map[dimension.as_via(join.join_prefix).via_name] = '{}.{}'.format(self._col(join.name), self._col(dimension.via_name))
+                field_map[dimension.as_via(join.join_prefix).via_name] = '{}.{}'.format(self._col(join.name), self._col(dimension.fieldname(role='dimension')))
 
         return field_map
 
