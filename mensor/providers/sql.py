@@ -74,9 +74,6 @@ class SQLDialect(object):
 
     TEMPLATE_TABLE = textwrap.dedent("""
         SELECT
-            {%- for identifier in identifiers %}
-            {% if loop.index0 > 0 %}, {% endif %}{{ identifier.expr }}
-            {%- endfor %}
             {%- for dimension in dimensions %}
             {% if loop.index0 > 0 or identifiers%}, {% endif %}{{ dimension.expr }}
             {%- endfor %}
@@ -315,7 +312,6 @@ class SQLTableMeasureProvider(SQLMeasureProvider):
             raise RuntimeError("No columns identified in table.")
         return self._template_environment.get_template(self.dialect.TEMPLATE_TABLE).render(
             table=self.name,
-            identifiers=self.identifiers,
-            measures=[m for m in self.measures if m != 'count'],
-            dimensions=self.dimensions
+            measures=[m for m in measures if m != 'count' and not m.external],
+            dimensions=segment_by
         )
