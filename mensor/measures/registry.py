@@ -213,11 +213,12 @@ class MeasureRegistry(object):
         via = ''
         features = None
 
-        private = external = False
+        private = external = implicit = False
 
         if isinstance(feature, (_ResolvedFeature, _ProvidedFeature)):
             private = feature.private
             external = feature.external
+            implicit = feature.implicit
             feature = feature.via_name  # Re-resolve any resolved feature, since resolved features are currently not deeply resolved
 
         if isinstance(feature, str):
@@ -256,11 +257,7 @@ class MeasureRegistry(object):
         else:
             raise ValueError("Invalid type for {}: `{}`".format(kind, feature.__class__))
 
-        r = _ResolvedFeature(feature.name if isinstance(feature, _ProvidedFeature) else feature, via=via, unit_type=unit_type, kind=kind, providers=[d.provider for d in features])
-        if external:
-            r = r.as_external
-        if private:
-            r = r.as_private
+        r = _ResolvedFeature(feature.name if isinstance(feature, _ProvidedFeature) else feature, via=via, unit_type=unit_type, kind=kind, providers=[d.provider for d in features], external=external, private=private, implicit=implicit)
         return r
 
     def _resolve_foreign_key(self, unit_type, foreign_type):

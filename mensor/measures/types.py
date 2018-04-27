@@ -60,7 +60,7 @@ class _ProvidedFeature(object):
         else:
             raise ValueError("Unrecognised specification of {}: {}".format(cls.__name__, spec))
 
-    def __init__(self, name, expr=None, desc=None, shared=False, provider=None, external=False, private=False, via=None):
+    def __init__(self, name, expr=None, desc=None, shared=False, provider=None, external=False, private=False, implicit=False, via=None):
         self.name = name
         self.expr = expr or name
         self.desc = desc
@@ -68,6 +68,7 @@ class _ProvidedFeature(object):
         self.provider = provider
         self.external = external
         self.private = private
+        self.implicit = implicit
         self.via = via
 
     @property
@@ -123,6 +124,18 @@ class _ProvidedFeature(object):
         dim.private = False
         return dim
 
+    @property
+    def as_implicit(self):
+        dim = copy.copy(self)
+        dim.implicit = True
+        return dim
+
+    @property
+    def as_explicit(self):
+        dim = copy.copy(self)
+        dim.implicit = False
+        return dim
+
     def as_via(self, *vias):
         vias = [via.name if isinstance(via, _ProvidedFeature) else via for via in vias]
         # In the case that we are adding a single via, there cannot be two identical components
@@ -146,15 +159,14 @@ class _ProvidedFeature(object):
         return self.name.__lt__(other.name)
 
     # Methods to assist MeasureProviders with handling data field names
-    @property
-    def fieldname(self):
+    def fieldname(self, role=None):
         return self.via_name
 
 
 class _ResolvedFeature(object):
 
     def __init__(self, name, via=None, unit_type=None, kind=None, providers=[],
-                 external=False, private=False):
+                 external=False, private=False, implicit=False):
         self.name = name
         self.via = via or None
         self.unit_type = unit_type
@@ -162,6 +174,7 @@ class _ResolvedFeature(object):
         self.providers = providers
         self.external = external
         self.private = private
+        self.implicit = implicit
 
     @property
     def path(self):
@@ -204,16 +217,32 @@ class _ResolvedFeature(object):
     def resolved_next(self):  # TODO: Make more consistent with Constraint API?
         s = self.via.split('/')
         if len(s) > 1:
-            return self.__class__(self.name, via='/'.join(s[1:]), providers=self.providers, external=self.external, private=self.private)
+            return self.__class__(self.name, via='/'.join(s[1:]), providers=self.providers, external=self.external, private=self.private, implicit=self.implicit)
         return self
 
     @property
     def as_external(self):
-        return self.__class__(self.name, via=self.via, providers=self.providers, external=True, private=self.private)
+        return self.__class__(self.name, via=self.via, providers=self.providers, external=True, private=self.private, implicit=self.implicit)
+
+    @property
+    def as_internal(self):
+        return self.__class__(self.name, via=self.via, providers=self.providers, external=False, private=self.private, implicit=self.implicit)
 
     @property
     def as_private(self):
-        return self.__class__(self.name, via=self.via, providers=self.providers, external=self.external, private=True)
+        return self.__class__(self.name, via=self.via, providers=self.providers, external=self.external, private=True, implicit=self.implicit)
+
+    @property
+    def as_public(self):
+        return self.__class__(self.name, via=self.via, providers=self.providers, external=self.external, private=False, implicit=self.implicit)
+
+    @property
+    def as_implicit(self):
+        return self.__class__(self.name, via=self.via, providers=self.providers, external=self.external, private=self.private, implicit=True)
+
+    @property
+    def as_explicit(self):
+        return self.__class__(self.name, via=self.via, providers=self.providers, external=self.external, private=self.private, implicit=False)
 
     def from_provider(self, provider):
         from .provider import MeasureProvider
@@ -225,6 +254,8 @@ class _ResolvedFeature(object):
             dim = dim.as_external
         if self.private:
             dim = dim.as_private
+        if self.implicit:
+            dim = dim.as_implicit
 
         return dim
 
@@ -232,7 +263,7 @@ class _ResolvedFeature(object):
         self.providers = {provider: self.providers[provider]}
 
     def __repr__(self):
-        attrs = (['e'] if self.external else []) + (['p'] if self.private else [])
+        attrs = (['e'] if self.external else []) + (['p'] if self.private else []) + (['i'] if self.implicit else [])
         return (
             "Resolved([{}/]{}{}, {})".format(
                 self.unit_type.name if self.unit_type else '*',
@@ -335,9 +366,10 @@ class _Measure(_ProvidedFeature):
         self.unit_agg = unit_agg if isinstance(unit_agg, AGG_METHODS) else AGG_METHODS(unit_agg)
         self.distribution = distribution if isinstance(distribution, DISTRIBUTIONS) else DISTRIBUTIONS(distribution)
 
-    @property
-    def fieldname(self):
-        return '{}|raw'.format(self.via_name)
+    def fieldname(self, role='measure'):
+        if role == 'measure':
+            return '{}|raw'.format(self.via_name)
+        return self.via_name
 
     def get_fields(self, stats=True, unit_agg=False, for_pandas=False):
         """
