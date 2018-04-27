@@ -1,4 +1,5 @@
 import numbers
+import textwrap
 
 import jinja2
 
@@ -9,56 +10,6 @@ from mensor.measures.types import AGG_METHODS
 # TODO: Consider using sqlalchemy to generate SQL
 # TODO: Consider creating an option to produce SQL using WITH clauses
 #       subqueries are safer, but perhaps less readable
-TEMPLATE = jinja2.Template("""
-SELECT
-    {%- for dimension in dimensions %}
-    {% if loop.index0 > 0 %}, {% endif %}{{ dimension }}
-    {%- endfor %}
-    {%- for measure in measures %}
-    {% if dimensions or loop.index0 > 0 %}, {% endif %}{{ measure }}
-    {%- endfor %}
-FROM (
-    {{ _sql |indent(width=4)}}
-) "{{ provider.name }}_query"
-{%- if joins|length > 0 %}
-{%- for join in joins %}
-JOIN  (
-    {{join.object|indent(width=4)}}
-) "{{join.name}}"
-ON
-{%- for field in join.left_on -%}
-{% if loop.index0 > 0 %} AND{% endif %} "{{ provider.name }}_query"."{{provider.resolve(field, kind='dimension').expr}}" = "{{join.name}}"."{{join.right_on[loop.index0]}}"
-{%- endfor -%}
-{%- endfor %}
-{%- endif %}
-{%- if constraints %}
-WHERE {{ constraints }}
-{%- endif %}
-{%- if groupby|length > 0 %}
-GROUP BY
-{%- for gb in groupby %}
-{%- if positional_groupby %}
-{%- if loop.index > 1 %},{% endif %} {{ gb }}
-{%- else %}
-    {% if loop.index > 1 %},{% endif %} {{ gb }}
-{%- endif %}
-{%- endfor %}
-{%- endif %}
-""".strip())
-
-TEMPLATE_TABLE = jinja2.Template("""
-SELECT
-    {%- for identifier in identifiers %}
-    {% if loop.index0 > 0 %}, {% endif %}{{ identifier.expr }}
-    {%- endfor %}
-    {%- for dimension in dimensions %}
-    {% if loop.index0 > 0 or identifiers%}, {% endif %}{{ dimension.expr }}
-    {%- endfor %}
-    {%- for measure in measures %}
-    {% if loop.index0 > 0 or identifiers or dimensions %}, {% endif %}{{ measure.expr }}
-    {%- endfor %}
-FROM {{table}}
-""".strip())
 
 
 # Dialects
@@ -76,39 +27,109 @@ class SQLDialect(object):
         AGG_METHODS.COUNT: lambda x: "COUNT({})".format(x)
     }
 
+    TEMPLATE_BASE = textwrap.dedent("""
+        SELECT
+            {%- for dimension in dimensions %}
+            {% if loop.index0 > 0 %}, {% endif %}{{ dimension }}
+            {%- endfor %}
+            {%- for measure in measures %}
+            {% if dimensions or loop.index0 > 0 %}, {% endif %}{{ measure }}
+            {%- endfor %}
+        FROM (
+            {{ _sql | indent(width=4) }}
+        ) {{ table_name | col }}
+        {%- if joins|length > 0 %}
+        {%- for join in joins %}
+        JOIN  (
+            {{ join.object | indent(width=4) }}
+        ) {{ join.name | col }}
+        ON
+        {%- for field in join.left_on %}
+            {% if loop.index0 > 0 %}AND {% endif %}{{ field_map[field] }} = {{ join.name | col }}.{{ join.right_on[loop.index0] | col }}
+        {%- endfor -%}
+        {%- endfor %}
+        {%- endif %}
+        {%- if constraints %}
+        WHERE {{ constraints }}
+        {%- endif %}
+        {%- if groupby|length > 0 %}
+        GROUP BY
+        {%- for gb in groupby %}
+        {%- if positional_groupby %}
+        {%- if loop.index > 1 %},{% endif %} {{ gb }}
+        {%- else %}
+            {% if loop.index > 1 %},{% endif %} {{ gb }}
+        {%- endif %}
+        {%- endfor %}
+        {%- endif %}
+    """).strip()
+
+    TEMPLATE_STATS = textwrap.dedent("""
+        SELECT
+
+        FROM (
+            {{ base_sql }}
+        )
+    """).strip()
+
+    TEMPLATE_TABLE = textwrap.dedent("""
+        SELECT
+            {%- for identifier in identifiers %}
+            {% if loop.index0 > 0 %}, {% endif %}{{ identifier.expr }}
+            {%- endfor %}
+            {%- for dimension in dimensions %}
+            {% if loop.index0 > 0 or identifiers%}, {% endif %}{{ dimension.expr }}
+            {%- endfor %}
+            {%- for measure in measures %}
+            {% if loop.index0 > 0 or identifiers or dimensions %}, {% endif %}{{ measure.expr }}
+            {%- endfor %}
+        FROM {{table}}
+    """).strip()
+
     @classmethod
     def constraint_maps(cls):
+        """
+        Each mapped value for a contraint should be a function taking three parameter:
+            - a where clause
+            - a field mapping
+            - a resolver for constraints taking arguments field_mapping and a where clause
+        """
+        ve = cls.value_encode
         return {
-            CONSTRAINTS.AND: lambda m, w, f: '({})'.format(' AND '.join(m(o, f) for o in w.operands)),
-            CONSTRAINTS.OR: lambda m, w, f: '({})'.format(' OR '.join(m(o, f) for o in w.operands)),
-            CONSTRAINTS.EQUALITY: lambda m, w, f: "{} = {}".format(f[w.field], cls.qv(w.value)),
-            CONSTRAINTS.INEQUALITY_GT: lambda m, w, f: "{} > {}".format(f[w.field], cls.qv(w.value)),
-            CONSTRAINTS.INEQUALITY_GTE: lambda m, w, f: "{} >= {}".format(f[w.field], cls.qv(w.value)),
-            CONSTRAINTS.INEQUALITY_LT: lambda m, w, f: "{} < {}".format(f[w.field], cls.qv(w.value)),
-            CONSTRAINTS.INEQUALITY_LTE: lambda m, w, f: "{} <= {}".format(f[w.field], cls.qv(w.value)),
+            CONSTRAINTS.AND: lambda w, f, m: '({})'.format(' AND '.join(m(f, o) for o in w.operands)),
+            CONSTRAINTS.OR: lambda w, f, m: '({})'.format(' OR '.join(m(f, o) for o in w.operands)),
+            CONSTRAINTS.EQUALITY: lambda w, f, m: "{} = {}".format(f[w.field], ve(w.value)),
+            CONSTRAINTS.INEQUALITY_GT: lambda w, f, m: "{} > {}".format(f[w.field], ve(w.value)),
+            CONSTRAINTS.INEQUALITY_GTE: lambda w, f, m: "{} >= {}".format(f[w.field], ve(w.value)),
+            CONSTRAINTS.INEQUALITY_LT: lambda w, f, m: "{} < {}".format(f[w.field], ve(w.value)),
+            CONSTRAINTS.INEQUALITY_LTE: lambda w, f, m: "{} <= {}".format(f[w.field], ve(w.value)),
         }
 
+    # SQL rendering helpers
     @classmethod
-    def qc(cls, col):
-        "This method quotes columns appropriately."
-        return '{quote}{col}{quote}'.format(quote=cls.QUOTE_COL, col=col)
+    def column_encode(cls, column_name):
+        return '{quote}{col}{quote}'.format(
+            quote=cls.QUOTE_COL,
+            col=column_name
+        )
 
     @classmethod
-    def qv(cls, value):
+    def column_decode(cls, column_name):
+        return column_name
+
+    @classmethod
+    def value_encode(cls, value):
         "This method quotes values appropriately."
         if isinstance(value, str):
-            return '{quote}{value}{quote}'.format(quote=cls.QUOTE_STR, value=value)
+            return '{quote}{value}{quote}'.format(quote=cls.QUOTE_STR, value=value)  # TODO: escape quotes in string
         elif isinstance(value, numbers.Number):
             return str(value)
-        raise ValueError("SQL backend does not support quoting objects of type: `{}`".format(type(value)))
+        raise ValueError("SQL dialect `{}` does not support quoting objects of type: `{}`".format(cls, type(value)))
 
-    @classmethod
-    def translate_from_mensor_name(cls, mensor_name):
-        return mensor_name
-
-    @classmethod
-    def translate_to_mensor_name(cls, sql_name):
-        return sql_name
+    # TODO?
+    # @classmethod
+    # def value_decode(cls, value):
+    #     return value
 
 
 class PrestoDialect(SQLDialect):
@@ -122,12 +143,15 @@ class HiveDialect(SQLDialect):
     POSITIONAL_GROUPBY = False
 
     @classmethod
-    def translate_from_mensor_name(cls, mensor_name):
-        return mensor_name.replace('/', '___')
+    def column_encode(cls, column_name):
+        return '{quote}{col}{quote}'.format(
+            quote=cls.QUOTE_COL,
+            col=column_name.replace(':', '+').replace('/', '-')
+        )
 
     @classmethod
-    def translate_to_mensor_name(cls, sql_name):
-        return sql_name.replace('___', '/')
+    def column_decode(cls, column_name):
+        return col.replace('+', ':').replace('+', '/')
 
 
 DIALECTS = {
@@ -149,122 +173,14 @@ class SQLMeasureProvider(MeasureProvider):
 
         self.add_measure('count', shared=True, distribution=None)
 
+        self._template_environment = jinja2.Environment(loader=jinja2.FunctionLoader(lambda x: x))
+        self._template_environment.filters.update({
+            'col': self._col,
+            'val': self._val
+        })
+
     def _sql(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
         return self._base_sql
-
-    def _dimension_map(self, dimensions, joins):
-        field_map = {}
-        for dimension in dimensions:
-            if not dimension.external:
-                field_map[dimension.via_name] = '"{}_query"."{}"'.format(self.name, dimension.expr)
-
-        for join in joins:
-            for dimension in join.dimensions:
-                if dimension not in join.right_on:
-                    field_map[dimension.as_via(join.unit_type)] = '"{}"."{}"'.format(join.name, dimension.via_name)
-
-        return field_map
-
-    def _get_measures_sql(self, measures, joins, stats, covariates):
-        aggs = []
-        if covariates:
-            raise NotImplementedError('covariates is not yet implemented in SQL provider')
-
-        for measure in measures:
-            if measure == 'count':
-                if stats:
-                    aggs.append('SUM(1) AS "{}"'.format(self.dialect.translate_from_mensor_name("count|sum")))
-                    aggs.append('SUM(1) AS "{}"'.format(self.dialect.translate_from_mensor_name("count|count")))
-                else:
-                    aggs.append('SUM(1) AS "{}"'.format(self.dialect.translate_from_mensor_name("count|raw")))
-            elif not measure.external and not measure.private:
-                for field_suffix, col_map in self._get_distribution_fields(measure.distribution if stats else DISTRIBUTIONS.RAW).items():
-                    aggs.append(
-                        '{col_op} AS "{f}"'.format(
-                            col_op=col_map('"{}_query".{}'.format(self.name, measure.expr)),
-                            f=self.dialect.translate_from_mensor_name(measure.via_name + field_suffix),
-                        )
-                    )
-
-        for join in joins:
-            for measure in join.measures:
-                if not measure.private:
-                    suffixes = list(self._get_distribution_fields(measure.distribution))
-                    aggs.extend([
-                        'SUM("{n}"."{m}") AS "{o}"'.format(
-                            n=join.name,
-                            m=self.dialect.translate_from_mensor_name(measure.via_name + suffix),
-                            o=self.dialect.translate_from_mensor_name(measures[measure].via_name + suffix),
-                        )
-                        for suffix in suffixes
-                    ])
-
-        return aggs
-
-    def _get_dimensions_sql(self, dimensions, joins):
-        dims = []
-        for dimension in dimensions:
-            if not dimension.external and not dimension.private:
-                dims.append('"{n}_query"."{m}" AS "{o}"'.format(
-                    n=self.name, m=dimension.expr, o=self.dialect.translate_from_mensor_name(dimension.via_name))
-                )
-
-        for join in joins:
-            for dimension in join.dimensions:
-                if not dimension.private and dimension not in join.right_on:
-                    dims.append('"{n}"."{m}" AS "{o}"'.format(
-                        n=join.name, m=dimension.via_name,
-                        o=self.dialect.translate_from_mensor_name(dimension.as_via(join.unit_type).via_name))
-                    )
-
-        return dims
-
-    def _get_groupby_sql(self, dimensions, joins):
-
-        dims = []
-
-        count = 1
-        for dimension in dimensions:
-            if not dimension.external and not dimension.private:
-                if self.dialect.POSITIONAL_GROUPBY:
-                    dims.append(count)
-                    count += 1
-                else:
-                    dims.append('"{n}_query"."{m}"'.format(n=self.name, m=dimension.expr))
-
-        for j in joins:
-            for dimension in j.dimensions:
-                if not dimension.private and dimension not in j.right_on:
-                    if self.dialect.POSITIONAL_GROUPBY:
-                        dims.append(count)
-                        count += 1
-                    else:
-                        dims.append('"{n}"."{m}"'.format(n=j.name, m=dimension.via_name))
-
-        return dims
-
-    def _get_where_sql(self, where, field_map):
-        if where is None:
-            return None
-        return self._constraint_map(where.kind)(self._get_where_sql, where, field_map)
-
-    def _get_ir(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
-        sql = TEMPLATE.render(
-            _sql=self._sql(unit_type=unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, stats=stats, covariates=covariates, **opts),
-            provider=self,
-            dimensions=self._get_dimensions_sql(segment_by, joins),
-            measures=self._get_measures_sql(measures, joins, stats, covariates),
-            groupby=self._get_groupby_sql(segment_by, joins),
-            joins=joins,
-            constraints=self._get_where_sql(where, self._dimension_map(segment_by, joins)),
-            positional_groupby=self.dialect.POSITIONAL_GROUPBY,
-        )
-        if self.dialect.QUOTE_COL != '"':
-            sql = sql.replace('"', self.dialect.QUOTE_COL)
-        return sql
-
-    def get_sql(self, *args, **kwargs):
-        return self.get_ir(*args, **kwargs)
 
     def _evaluate(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
         df = self.db_client.query(self.get_sql(
@@ -273,10 +189,112 @@ class SQLMeasureProvider(MeasureProvider):
             segment_by=segment_by,
             where=where,
             joins=joins,
+            stats=stats,
+            covariates=covariates,
             **opts
         ))
-        df.columns = [self.dialect.translate_to_mensor_name(col) for col in df.columns]
+        df.columns = [self.dialect.column_decode(col) for col in df.columns]
         return df
+
+    def get_sql(self, *args, **kwargs):
+        return self.get_ir(*args, **kwargs)
+
+    def _get_ir(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
+        field_map = self._field_map(unit_type, measures, segment_by, joins)
+        unit_agg = not unit_type.is_unique
+        sql = self._template_environment.get_template(self.dialect.TEMPLATE_BASE).render(
+            _sql=self._sql(unit_type=unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, stats=stats, covariates=covariates, **opts),
+            field_map=field_map,
+            provider=self,
+            table_name=self._table_name(unit_type),
+            dimensions=self._get_dimensions_sql(field_map, segment_by),
+            measures=self._get_measures_sql(field_map, measures, unit_agg, stats, covariates),
+            groupby=self._get_groupby_sql(field_map, segment_by),
+            joins=joins,
+            constraints=self._get_where_sql(field_map, where),
+            positional_groupby=self.dialect.POSITIONAL_GROUPBY,
+        )
+        return sql
+
+    # SQL rendering Methods
+    def _table_name(self, unit_type):
+        return "provision_{}_{}".format(self.name, unit_type.name)
+
+    def _col(self, column_name):
+        return self.dialect.column_encode(column_name)
+
+    def _val(self, value):
+        return self.dialect.value_encode(value)
+
+    def _field_map(self, unit_type, measures, dimensions, joins):
+        field_map = {}
+
+        self_table_name = self._table_name(unit_type)
+
+        for measure in measures:
+            if not measure.external:
+                field_map[measure.via_name] = '{}.{}'.format(self._col(self_table_name), self._col(measure.expr))
+
+        for dimension in dimensions:
+            if not dimension.external:
+                field_map[dimension.via_name] = '{}.{}'.format(self._col(self_table_name), self._col(dimension.expr))
+
+        for join in joins:
+            for measure in join.measures:
+                field_map[measure.as_via(join.join_prefix).via_name] = '{}.{}'.format(self._col(join.name), self._col(measure.via_name))
+            for dimension in join.dimensions:
+                field_map[dimension.as_via(join.join_prefix).via_name] = '{}.{}'.format(self._col(join.name), self._col(dimension.via_name))
+
+        return field_map
+
+    def _get_dimensions_sql(self, field_map, dimensions):
+        dims = []
+        for dimension in dimensions:
+            if not dimension.private:
+                dims.append(
+                    '{} AS {}'.format(
+                        field_map[dimension.via_name],
+                        self._col(dimension.via_name)
+                    )
+                )
+        return dims
+
+    def _get_measures_sql(self, field_map, measures, unit_agg, stats, covariates):
+        aggs = []
+
+        if unit_agg and stats:
+            raise NotImplementedError("Computing stats and rebasing units simultaneously has not been implemented for the SQL backend.")
+        else:
+            for measure in measures:
+                if not measure.private:
+                    for fieldname, col_map in measure.get_fields(stats=stats, unit_agg=unit_agg).items():
+                        aggs.append(
+                            '{col_op} AS {f}'.format(
+                                col_op=col_map('SUM(1)' if measure == 'count' else field_map[measure.via_name]),
+                                f=self._col(fieldname),
+                            )
+                        )
+
+        return aggs
+
+    def _get_groupby_sql(self, field_map, dimensions):
+        groupby = []
+
+        count = 1
+        for dimension in dimensions:
+            if not dimension.private:
+                if self.dialect.POSITIONAL_GROUPBY:
+                    groupby.append(count)
+                    count += 1
+                else:
+                    groupby.append(field_map[dimension.via_name])
+
+        return groupby
+
+    def _get_where_sql(self, field_map, where):
+        if where is None:
+            return None
+        return self._constraint_map(where.kind)(where, field_map, self._get_where_sql)
 
     @property
     def _agg_methods(self):
@@ -292,10 +310,10 @@ class SQLMeasureProvider(MeasureProvider):
 
 class SQLTableMeasureProvider(SQLMeasureProvider):
 
-    def _sql(self, measures, segment_by, where, joins):
+    def _sql(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
         if len(self.identifiers) + len(self.dimensions) + len(self.measures) == 0:
             raise RuntimeError("No columns identified in table.")
-        return TEMPLATE_TABLE.render(
+        return self._template_environment.get_template(self.dialect.TEMPLATE_TABLE).render(
             table=self.name,
             identifiers=self.identifiers,
             measures=[m for m in self.measures if m != 'count'],
