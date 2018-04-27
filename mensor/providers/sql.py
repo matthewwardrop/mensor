@@ -270,7 +270,7 @@ class SQLMeasureProvider(MeasureProvider):
                     for fieldname, col_map in measure.get_fields(stats=stats, unit_agg=unit_agg).items():
                         aggs.append(
                             '{col_op} AS {f}'.format(
-                                col_op=col_map('SUM(1)' if measure == 'count' else field_map[measure.via_name]),
+                                col_op=col_map('1' if measure == 'count' else field_map[measure.via_name]),
                                 f=self._col(fieldname),
                             )
                         )
