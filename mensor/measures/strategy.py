@@ -43,8 +43,9 @@ class EvaluationStrategy(object):
         unconstrained = []
         constrained_dimensions = self.where.dimensions if self.where else []
         constrained_dimensions.extend(self.join_on_right)
-        for dimension in self.segment_by:
-            if isinstance(dimension, _Dimension) and dimension.requires_constraint and dimension not in constrained_dimensions:
+
+        for dimension in self.provider.dimensions_for_unit(self.unit_type):
+            if dimension.requires_constraint and dimension not in constrained_dimensions:
                 unconstrained.append('{}/{}'.format(prefix, dimension.name) if prefix else dimension.name)
 
         for join in self.joins:

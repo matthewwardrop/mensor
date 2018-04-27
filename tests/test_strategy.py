@@ -50,8 +50,6 @@ class EvaluationStrategyTests(unittest.TestCase):
         )
         self.registry.register(transactions)
 
-        self.registry.show()
-
     def test_simple(self):
         es = self.registry.evaluate('person', measures=['age'], segment_by=['name'], dry_run=True)
 
@@ -70,13 +68,12 @@ class EvaluationStrategyTests(unittest.TestCase):
         self.assertEqual(es.where.value, '2018-01-01')
         self.assertEqual(es.where.relation, '==')
 
-    @unittest.skip("Constraints are not currently enforced if not present in query.")
-    def test_partition_constraint_enforced(self):
-        self.assertRaises(RuntimeError, self.registry.evaluate, 'transaction',
-                          measures=['value'], dry_run=True)
+    def test_requires_constraint_enforced(self):
+        es = self.registry.evaluate('transaction', measures=['value'], dry_run=True)
+        self.assertRaises(RuntimeError, es._check_constraints)
 
-        # The following should not fail
-        self.registry.evaluate('transaction', measures=['value'], where={'ds': '2018-01-01'}, dry_run=True)
+        es = self.registry.evaluate('transaction', measures=['value'], where={'ds': '2018-01-01'}, dry_run=True)
+        es._check_constraints()
 
     def test_multiple_providers_for_unit_type(self):
         es = self.registry.evaluate(
