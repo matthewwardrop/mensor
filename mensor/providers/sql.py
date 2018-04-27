@@ -40,7 +40,7 @@ class SQLDialect(object):
         ) {{ table_name | col }}
         {%- if joins|length > 0 %}
         {%- for join in joins %}
-        JOIN  (
+        {{ join.how | upper }} JOIN  (
             {{ join.object | indent(width=4) }}
         ) {{ join.name | col }}
         ON
