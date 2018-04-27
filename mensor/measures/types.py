@@ -296,7 +296,7 @@ class _StatisticalUnitIdentifier(_ProvidedFeature):
         prefix = ''
         if self.is_primary:
             prefix = '^'
-        if self.is_unique:
+        elif self.is_unique:
             prefix = '*'
         return prefix + _ProvidedFeature.__repr__(self)
 

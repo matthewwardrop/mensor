@@ -101,6 +101,13 @@ class EvaluationStrategyTests(unittest.TestCase):
 
         self.assertIsNone(es.joins[0].join_prefix)
 
+    def test_primary_key_requirement(self):
+        es = self.registry.evaluate('person', segment_by=['geography'], dry_run=True)
+
+        self.assertEqual(len(es.joins), 1)
+        self.assertEqual(es.joins[0].unit_type, 'person')
+        self.assertEqual(set(es.joins[0].segment_by), {'person', 'geography', 'ds'})
+
     def test_forward_joins(self):
         es = self.registry.evaluate('transaction', measures=['person:seller/age'], segment_by=['person:buyer/name'],
                                     where={'*/ds': '2018-01-01'}, dry_run=True)
