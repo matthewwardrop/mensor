@@ -23,7 +23,7 @@ class SQLDialect(object):
     AGG_METHODS = {
         AGG_METHODS.SUM: lambda x: "SUM({})".format(x),
         AGG_METHODS.MEAN: lambda x: "AVG({})".format(x),
-        AGG_METHODS.SQUARE_SUM: lambda x: "SUM(POW({}, 2)".format(x),
+        AGG_METHODS.SQUARE_SUM: lambda x: "SUM(POW({}, 2))".format(x),
         AGG_METHODS.COUNT: lambda x: "COUNT({})".format(x)
     }
 
