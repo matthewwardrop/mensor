@@ -32,10 +32,23 @@ class EvaluationStrategyTests(unittest.TestCase):
                 data=os.path.join(data_dir, 'people.csv')
             )
             .add_identifier('person', expr='id', role='unique')
-            .add_dimension('geography', expr='id_country')
+            .add_identifier('geography', expr='id_geography', role='foreign')
             .add_partition('ds')
         )
         self.registry.register(people2)
+
+        geographies = (
+            PandasMeasureProvider(
+                name='geographies',
+                data=os.path.join(data_dir, 'geographies.csv')
+            )
+            .add_identifier('geography', expr='id_geography', role='primary')
+            .add_dimension('name')
+            .add_measure('population')
+            .add_partition('ds')
+
+        )
+        self.registry.register(geographies)
 
         transactions = (
             PandasMeasureProvider(
