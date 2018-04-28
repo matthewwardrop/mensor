@@ -321,12 +321,16 @@ class Constraint(BaseConstraint):
                 relation = m.group(0)
                 return cls(field, relation=relation, value=value[len(relation):], generic=generic)
             return Constraint(field, '==', value, generic=generic)
-        elif isinstance(value, tuple):
-            if all(isinstance(v, str) and re.match('^[<>][=]?', v) for v in value):
-                return cls.from_spec(tuple({('*/' if generic else '') + field: v} for v in value))
-            return Constraint(field, 'in', value, generic=generic)
         elif isinstance(value, list):
             return cls.from_spec([{('*/' if generic else '') + field: v} for v in value])
+        elif isinstance(value, set):
+            if any(isinstance(v, tuple) for v in value) or all(isinstance(v, str) and re.match('^[<>][=]?', v) for v in value):
+                return cls.from_spec(tuple({('*/' if generic else '') + field: v} for v in value))
+            return Constraint(field, 'in', value, generic=generic)
+        elif isinstance(value, tuple):
+            assert len(value) == 2, "All explicit relations must be of length two."
+            return Constraint(field, value[0], value[1], generic=generic)
+
         return cls(field, '==', value, generic=generic)
 
     def __init__(self, field, relation, value, generic=False):
