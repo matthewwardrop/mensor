@@ -203,6 +203,7 @@ class PandasMeasureProvider(MeasureProvider):
             CONSTRAINTS.INEQUALITY_GTE: lambda df, c: ge(df[c.field], c.value),
             CONSTRAINTS.INEQUALITY_LT: lambda df, c: lt(df[c.field], c.value),
             CONSTRAINTS.INEQUALITY_LTE: lambda df, c: le(df[c.field], c.value),
+            CONSTRAINTS.IN: lambda df, c: df[c.field].isin(c.value),
         }
 
     @property

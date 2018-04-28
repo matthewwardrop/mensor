@@ -100,6 +100,7 @@ class SQLDialect(object):
             CONSTRAINTS.INEQUALITY_GTE: lambda w, f, m: "{} >= {}".format(f[w.field], ve(w.value)),
             CONSTRAINTS.INEQUALITY_LT: lambda w, f, m: "{} < {}".format(f[w.field], ve(w.value)),
             CONSTRAINTS.INEQUALITY_LTE: lambda w, f, m: "{} <= {}".format(f[w.field], ve(w.value)),
+            CONSTRAINTS.IN: lambda w, f, m: "{} IN ({})".format(f[w.field], ", ".join(ve(v) for v in w.value)),
         }
 
     # SQL rendering helpers
