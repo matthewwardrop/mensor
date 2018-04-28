@@ -354,7 +354,7 @@ class MeasureRegistry(object):
                 dimensions=[dimensions.pop(dimension).from_provider(p) for dimension in dimensions.copy() if dimension in p.dimensions or dimension in p.identifiers or dimension in p.measures]
             ))
             if len(measures) + len(dimensions) == dimension_count and not (require_primary is True and len(provisions) > 0):
-               raise RuntimeError("Could not provide provisions for: measures={}, dimensions={}. This is a bug.".format(list(measures), list(dimensions)))
+                raise RuntimeError("Could not provide provisions for: measures={}, dimensions={}. This is a bug.".format(list(measures), list(dimensions)))
             dimension_count = len(measures) + len(dimensions)
 
         return provisions

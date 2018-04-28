@@ -422,8 +422,6 @@ class MeasureProvider(object):
         where_pre = []
         where_post = []
 
-        print("WHERE:", join_post_fields, join_right_post_keys)
-
         def add_constraint(op):
             if len(set(op.dimensions).intersection([
                 d if isinstance(d, str) else d.via_name
