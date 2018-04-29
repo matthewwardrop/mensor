@@ -91,6 +91,10 @@ class BaseConstraint(metaclass=ABCMeta):
     # Mathematical operations on constraints
 
     @abstractmethod
+    def __eq__(self, other):
+        raise NotImplementedError
+
+    @abstractmethod
     def __and__(self, other):
         raise NotImplementedError
 
@@ -196,6 +200,15 @@ class ContainerConstraint(BaseConstraint):
     def scoped(self):
         return self.__class__.from_operands([operand for operand in self.operands if operand.has_scoped])
 
+    # Mathematical operations
+    def __eq__(self, other):
+        if self.__class__ != other.__class__:
+            return False
+        for operand in self.operands:
+            if operand not in other.operands:
+                return False
+        return True
+
 
 class And(ContainerConstraint):
 
@@ -247,7 +260,7 @@ class Or(ContainerConstraint):
 
     @operands.setter
     def operands(self, operands):
-        if any(operand.has_generic and operand.has_scoped for operand in operands):
+        if any(operand.has_generic for operand in operands) and any(operand.has_scoped for operand in operands):
             raise ValueError("Generic constraints cannot be nested with non-generic constraints.")
         self._operands = operands
 
@@ -334,7 +347,8 @@ class Constraint(BaseConstraint):
         return cls(field, '==', value, generic=generic)
 
     def __init__(self, field, relation, value, generic=False):
-        assert relation in ('==', '<', '<=', '>', '>=', 'in'), "Invalid relation specified in constraint."
+        if relation not in ('==', '<', '<=', '>', '>=', 'in'):
+            raise ValueError("Invalid relation specified in constraint.")
         self.field = field
         self.relation = relation
         self.value = value
@@ -396,6 +410,16 @@ class Constraint(BaseConstraint):
             return self
 
     # Mathematical operations on constraints
+    def __eq__(self, other):
+        if not isinstance(other, Constraint):
+            return False
+        if self.field != other.field:
+            return False
+        if self.relation != other.relation:
+            return False
+        if self.value != other.value:
+            return False
+        return True
 
     def __and__(self, other):
         if isinstance(other, And):
