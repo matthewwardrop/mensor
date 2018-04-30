@@ -1,7 +1,7 @@
 import pandas as pd
 
 from mensor.measures.registry import MeasureRegistry
-from mensor.measures.types import MeasureSeries, MeasureDataFrame
+from mensor.measures.types import MeasureDataFrame, MeasureSeries
 
 from .types import Metric
 

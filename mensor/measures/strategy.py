@@ -2,8 +2,9 @@ import json
 from collections import OrderedDict
 from enum import Enum
 
-from .context import EvaluationContext, And
-from .types import Join, DimensionBundle, _StatisticalUnitIdentifier, _Dimension
+from .context import And, EvaluationContext
+from .types import (DimensionBundle, Join, _Dimension,
+                    _StatisticalUnitIdentifier)
 
 
 class STRATEGY_TYPE(Enum):

@@ -1,7 +1,7 @@
 import itertools
 import re
-from enum import Enum
 from abc import ABCMeta, abstractmethod, abstractproperty
+from enum import Enum
 
 import six
 

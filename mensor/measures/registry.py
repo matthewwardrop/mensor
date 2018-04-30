@@ -1,8 +1,8 @@
 from collections import Counter
 
-from .strategy import EvaluationStrategy
-from .types import _ProvidedFeature, _ResolvedFeature, Provision
 from ..utils import nested_dict_copy
+from .strategy import EvaluationStrategy
+from .types import Provision, _ProvidedFeature, _ResolvedFeature
 
 __all__ = ['MeasureRegistry']
 

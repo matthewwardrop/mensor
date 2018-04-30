@@ -1,6 +1,7 @@
-import pandas as pd
 import os
+
 import numpy as np
+import pandas as pd
 
 data_dir = os.path.dirname(__file__)
 with open(os.path.join(data_dir, 'geography_names.txt')) as f:

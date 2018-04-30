@@ -1,18 +1,13 @@
-# TODO: metrics.for_segment(Segment/Target instance).metrics.bookings.evaluate()
-# TODO: metrics.for_segment(Segment/Target instance).measures.bookings.evaluate()
-# TODO: metrics.for_segment(Segment/Target instance).measures.evaluate('bookings/trains')
-#
-# TODO: metrics.measures.booking_value.evaluate(segment_by='test')
-import logging
 import itertools
-from collections import OrderedDict
 
 import pandas as pd
 import six
 
+from mensor.utils import AttrDict
+
 from .context import CONSTRAINTS, And, Constraint
-from ..utils import AttrDict
-from .types import _Dimension, _Measure, _StatisticalUnitIdentifier, Join, MeasureDataFrame, MeasureSeries, AGG_METHODS, DISTRIBUTIONS, DISTRIBUTION_FIELDS
+from .types import (AGG_METHODS, Join, MeasureDataFrame, MeasureSeries,
+                    _Dimension, _Measure, _StatisticalUnitIdentifier)
 
 __all__ = ['MeasureProvider']
 

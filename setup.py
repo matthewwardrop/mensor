@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 version_info = {}
 with open('mensor/_version.py') as version_file:

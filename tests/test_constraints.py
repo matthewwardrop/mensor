@@ -1,6 +1,6 @@
 import unittest
 
-from mensor.measures.context import Constraint, And, Or, EvaluationContext
+from mensor.measures.context import And, Constraint, EvaluationContext, Or
 
 
 class PandasMeasureProviderTests(unittest.TestCase):

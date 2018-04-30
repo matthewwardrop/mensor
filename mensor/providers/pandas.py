@@ -1,9 +1,8 @@
 import pandas as pd
 
-from mensor.measures.provider import MeasureProvider
-from mensor.measures.types import AGG_METHODS
 from mensor.measures.context import CONSTRAINTS
-from mensor.measures.types import _Measure
+from mensor.measures.provider import MeasureProvider
+from mensor.measures.types import AGG_METHODS, _Measure
 
 
 class PandasMeasureProvider(MeasureProvider):

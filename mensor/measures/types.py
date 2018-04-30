@@ -1,6 +1,6 @@
 import copy
 import re
-from collections import namedtuple, OrderedDict
+from collections import OrderedDict, namedtuple
 from enum import Enum
 
 import numpy as np
