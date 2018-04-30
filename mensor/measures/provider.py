@@ -111,8 +111,8 @@ class MeasureProvider(object):
     def identifiers(self, identifiers):
         self._identifiers = self._get_dimensions_from_specs(_StatisticalUnitIdentifier, identifiers)
 
-    def add_identifier(self, unit_type=None, expr=None, role='foreign'):
-        identifier = _StatisticalUnitIdentifier(unit_type, expr=expr, role=role, provider=self)
+    def add_identifier(self, unit_type=None, expr=None, role='foreign', dummy=False):
+        identifier = _StatisticalUnitIdentifier(unit_type, expr=expr, role=role, dummy=dummy, provider=self)
         self._identifiers[identifier] = identifier
         return self
 

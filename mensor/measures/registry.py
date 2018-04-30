@@ -106,8 +106,8 @@ class MeasureRegistry(object):
                         store[key] = {}
                 store = store[key]
             assert isinstance(store, list)
-            if len(store) > 0:
-                assert value.shared and all([d.shared for d in store]), "Attempted to add duplicate non-shared dimension '{}'.".format(value)
+            if len(store) > 0 and not (value.shared and all([d.shared for d in store])):
+                raise RuntimeError("Attempted to add duplicate non-shared feature '{}'.".format(value))
             store.append(value)
 
     def __init__(self):

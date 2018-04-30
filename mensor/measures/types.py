@@ -306,10 +306,13 @@ class _Dimension(_ProvidedFeature):
 
 class _StatisticalUnitIdentifier(_ProvidedFeature):
 
-    def __init__(self, name, expr=None, desc=None, role='foreign', provider=None):
-        _ProvidedFeature.__init__(self, name, expr=expr, desc=desc, shared=True, provider=provider)
+    def __init__(self, name, expr=None, desc=None, role='foreign', dummy=False, provider=None):
+        _ProvidedFeature.__init__(self, name, expr=expr, desc=desc, shared=not dummy, provider=provider)
         assert role in ('primary', 'unique', 'foreign')
+        if dummy:
+            assert role == 'primary', "Dummy identifiers currently only makes sense when it is to be treated as primary."
         self.role = role
+        self._dummy = dummy
 
     @property
     def unit_type(self):
@@ -323,13 +326,32 @@ class _StatisticalUnitIdentifier(_ProvidedFeature):
     def is_unique(self):
         return self.role in ('primary', 'unique')
 
+    @property
+    def is_dummy(self):
+        """
+        If a unit type is a dummy, then it can never be linked to actual data,
+        which has the following consequences:
+        - The dimensions associated with it can never be used via foreign keys.
+        - It cannot be used as a member of `segment_by` in an evaluation.
+        - Its data provisions cannot be shared among other providers of the same
+          type.
+
+        These semantics are implied by setting 'shared' to False, so that is
+        what is done here.
+
+        Note that data is still accessible via reverse foreign keys.
+        """
+        return self._dummy
+
     def __repr__(self):
-        prefix = ''
+        prefix = suffix = ''
         if self.is_primary:
             prefix = '^'
         elif self.is_unique:
             prefix = '*'
-        return prefix + _ProvidedFeature.__repr__(self)
+        if self.is_dummy:
+            suffix = '(d)'
+        return prefix + _ProvidedFeature.__repr__(self) + suffix
 
     def matches(self, unit_type, reverse=False):
         '''
