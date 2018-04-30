@@ -60,9 +60,11 @@ class _ProvidedFeature(object):
         else:
             raise ValueError("Unrecognised specification of {}: {}".format(cls.__name__, spec))
 
-    def __init__(self, name, expr=None, desc=None, shared=False, provider=None, external=False, private=False, implicit=False, via=None):
+    def __init__(self, name, expr=None, default=None, desc=None, shared=False, provider=None,
+                 external=False, private=False, implicit=False, via=None):
         self.name = name
         self.expr = expr or name
+        self.default = default
         self.desc = desc
         self.shared = shared
         self.provider = provider
@@ -296,8 +298,8 @@ class _ResolvedFeature(object):
 
 class _Dimension(_ProvidedFeature):
 
-    def __init__(self, name, expr=None, desc=None, shared=False, partition=False, requires_constraint=False, provider=None):
-        _ProvidedFeature.__init__(self, name, expr=expr, desc=desc, shared=shared, provider=provider)
+    def __init__(self, name, expr=None, default=None, desc=None, shared=False, partition=False, requires_constraint=False, provider=None):
+        _ProvidedFeature.__init__(self, name, expr=expr, default=default, desc=desc, shared=shared, provider=provider)
         if not shared and partition:
             raise ValueError("Partitions must be shared.")
         self.partition = partition
@@ -382,9 +384,9 @@ class _Measure(_ProvidedFeature):
     # binomial distribution: <name>:type = 'binomial', <name>:sum, <name>:sample_size
     # other
 
-    def __init__(self, name, expr=None, desc=None, unit_agg='sum',
+    def __init__(self, name, expr=None, default=None, desc=None, unit_agg='sum',
                  distribution='normal', shared=False, provider=None):
-        _ProvidedFeature.__init__(self, name, expr=expr, desc=desc, shared=shared, provider=provider)
+        _ProvidedFeature.__init__(self, name, expr=expr, default=default, desc=desc, shared=shared, provider=provider)
         self.unit_agg = unit_agg if isinstance(unit_agg, AGG_METHODS) else AGG_METHODS(unit_agg)
         self.distribution = distribution if isinstance(distribution, DISTRIBUTIONS) else DISTRIBUTIONS(distribution)
 

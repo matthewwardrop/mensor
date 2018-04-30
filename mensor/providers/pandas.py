@@ -56,20 +56,30 @@ class PandasMeasureProvider(MeasureProvider):
         This method finalises a `pandas.DataFrame` instance by applying the
         following steps:
 
-        0) Apply any constraints provided in `where`.
-        1) Ensuring that all private measures and dimensions are removed.
-        2) Performing an aggregation over the measures segmented by the features
+        0) Apply any defaults as required.
+        1) Apply any constraints provided in `where`.
+        2) Ensuring that all private measures and dimensions are removed.
+        3) Performing an aggregation over the measures segmented by the features
            identified in `segment_by`. This is done in one of two ways:
            A) if `unit_agg` is `True`, a unit aggregation is performed.
            B) otherwise, a regular (summed) aggregation is performed. If `stats`
               is `True`, statistics about this aggregation are retained.
-        3) If a unit aggregation was performed, and `stats` is True, repeat the
+        4) If a unit aggregation was performed, and `stats` is True, repeat the
            aggregation to get (trivial) statistics.
 
         This method is implemented as a classmethod to make it accessible to
         `MeasureProvider.evaluate`, which provides the generic implementation
         for incompatible `MeasureProvider` instances using pandas DataFrames.
         """
+
+        # Apply defaults, if required
+        for measure in measures:
+            if measure.default is not None:
+                df[measure.fieldname(role='measure')].fillna(measure.default, inplace=True)
+
+        for dimension in segment_by:
+            if dimension.default is not None:
+                df[dimension.fieldname(role='dimension')].fillna(dimension.default, inplace=True)
 
         # Apply constraints
         if where:
@@ -158,7 +168,7 @@ class PandasMeasureProvider(MeasureProvider):
             AGG_METHODS.SUM: ('sum', lambda x: x),
             AGG_METHODS.MEAN: ('mean', lambda x: x),
             AGG_METHODS.SQUARE_SUM: ('sum', lambda x: x**2),
-            AGG_METHODS.COUNT: ('sum', lambda x: 1)
+            AGG_METHODS.COUNT: ('sum', lambda x: x.notnull())
         }
 
     @classmethod

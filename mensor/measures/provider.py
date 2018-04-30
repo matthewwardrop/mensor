@@ -152,8 +152,8 @@ class MeasureProvider(object):
     def dimensions(self, dimensions):
         self._dimensions = self._get_dimensions_from_specs(_Dimension, dimensions)
 
-    def add_dimension(self, name=None, desc=None, expr=None, shared=False, requires_constraint=False):
-        dimension = _Dimension(name, desc=desc, expr=expr, shared=shared, requires_constraint=requires_constraint, provider=self)
+    def add_dimension(self, name=None, desc=None, expr=None, default=None, shared=False, requires_constraint=False):
+        dimension = _Dimension(name, desc=desc, expr=expr, default=default, shared=shared, requires_constraint=requires_constraint, provider=self)
         self._dimensions[dimension] = dimension
         return self
 
@@ -202,8 +202,8 @@ class MeasureProvider(object):
     def measures(self, measures):
         self._measures = self._get_dimensions_from_specs(_Measure, measures)
 
-    def add_measure(self, name=None, expr=None, desc=None, shared=False, unit_agg='sum', distribution='normal'):
-        measure = _Measure(name, expr=expr, desc=desc, shared=shared, unit_agg=unit_agg, distribution=distribution, provider=self)
+    def add_measure(self, name=None, expr=None, default=None, desc=None, shared=False, unit_agg='sum', distribution='normal'):
+        measure = _Measure(name, expr=expr, default=default, desc=desc, shared=shared, unit_agg=unit_agg, distribution=distribution, provider=self)
         assert measure.unit_agg in self._agg_methods, "This provider does not support aggregating at the unit level using '{}'.".format(measure.unit_agg)
         self._measures[measure] = measure
         return self

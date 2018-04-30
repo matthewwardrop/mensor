@@ -122,12 +122,26 @@ class SQLDialect(object):
             return '{quote}{value}{quote}'.format(quote=cls.QUOTE_STR, value=value)  # TODO: escape quotes in string
         elif isinstance(value, numbers.Number):
             return str(value)
+        elif value is None:
+            return 'NULL'
         raise ValueError("SQL dialect `{}` does not support quoting objects of type: `{}`".format(cls, type(value)))
 
     # TODO?
     # @classmethod
     # def value_decode(cls, value):
     #     return value
+
+    @classmethod
+    def source_column_encode(cls, source_name, column_name, default=None):
+        return (
+            "COALESCE({source}.{column}, {default})"
+            if default is not None else
+            "{source}.{column}"
+        ).format(
+            source=cls.column_encode(source_name),
+            column=cls.column_encode(column_name),
+            default=cls.value_encode(default) if default is not None else None
+        )
 
 
 class PrestoDialect(SQLDialect):
@@ -231,17 +245,17 @@ class SQLMeasureProvider(MeasureProvider):
 
         for measure in measures:
             if not measure.external:
-                field_map[measure.via_name] = '{}.{}'.format(self._col(self_table_name), self._col(measure.expr))
+                field_map[measure.via_name] = self.dialect.source_column_encode(self_table_name, measure.expr, measure.default)
 
         for dimension in dimensions:
             if not dimension.external:
-                field_map[dimension.via_name] = '{}.{}'.format(self._col(self_table_name), self._col(dimension.expr))
+                field_map[dimension.via_name] = self.dialect.source_column_encode(self_table_name, dimension.expr, dimension.default)
 
         for join in joins:
             for measure in join.measures:
-                field_map[measure.as_via(join.join_prefix).via_name] = '{}.{}'.format(self._col(join.name), self._col(measure.fieldname(role='measure')))
+                field_map[measure.as_via(join.join_prefix).via_name] = self.dialect.source_column_encode(join.name, measure.fieldname(role='measure'), measure.default)
             for dimension in join.dimensions:
-                field_map[dimension.as_via(join.join_prefix).via_name] = '{}.{}'.format(self._col(join.name), self._col(dimension.fieldname(role='dimension')))
+                field_map[dimension.as_via(join.join_prefix).via_name] = self.dialect.source_column_encode(join.name, dimension.fieldname(role='dimension'), dimension.default)
 
         return field_map
 
