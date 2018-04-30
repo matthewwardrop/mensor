@@ -1,10 +1,7 @@
-import itertools
-import numbers
-
 import pandas as pd
 
 from mensor.measures.provider import MeasureProvider
-from mensor.measures.types import AGG_METHODS, DISTRIBUTIONS
+from mensor.measures.types import AGG_METHODS
 from mensor.measures.context import CONSTRAINTS
 from mensor.measures.types import _Measure
 
@@ -181,7 +178,7 @@ class PandasMeasureProvider(MeasureProvider):
         if not isinstance(agg_type, AGG_METHODS):
             raise ValueError("Agg type `{}` is not a valid instance of `mensor.measures.types.AGG_METHODS`.".format(agg_type))
         if agg_type not in cls._get_agg_methods():
-            raise NotImplementaedError("Agg type `{}` is not implemented by `{}`.".format(agg_type, self.__class__))
+            raise NotImplementedError("Agg type `{}` is not implemented by `{}`.".format(agg_type, cls))
         return cls._get_agg_methods()[agg_type]
 
     #  Constraint related methods
