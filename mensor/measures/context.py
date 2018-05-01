@@ -435,7 +435,7 @@ class Constraint(BaseConstraint):
         raise NotImplementedError
 
     def __repr__(self):
-        return "{}{}{}".format(('*/' if self.generic else '') + self.field, self.relation if self.relation is not 'in' else ' ∈ ', self.value)
+        return "{}{}{}".format(('*/' if self.generic else '') + self.field, self.relation if self.relation is not 'in' else ' ∈ ', self.value.__repr__())
 
 
 class EvaluationContext(object):
