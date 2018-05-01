@@ -18,8 +18,6 @@ class SQLDialect(object):
     QUOTE_COL = '"'
     QUOTE_STR = "'"
 
-    POSITIONAL_GROUPBY = True
-
     AGG_METHODS = {
         AGG_METHODS.SUM: lambda x: "SUM({})".format(x),
         AGG_METHODS.MEAN: lambda x: "AVG({})".format(x),
@@ -55,11 +53,7 @@ class SQLDialect(object):
         {%- if groupby|length > 0 %}
         GROUP BY
         {%- for gb in groupby %}
-        {%- if positional_groupby %}
-        {%- if loop.index > 1 %},{% endif %} {{ gb }}
-        {%- else %}
             {% if loop.index > 1 %},{% endif %} {{ gb }}
-        {%- endif %}
         {%- endfor %}
         {%- endif %}
     """).strip()
@@ -145,14 +139,12 @@ class SQLDialect(object):
 
 
 class PrestoDialect(SQLDialect):
-
-    POSITIONAL_GROUPBY = True
+    pass
 
 
 class HiveDialect(SQLDialect):
 
     QUOTE_COL = '`'
-    POSITIONAL_GROUPBY = False
 
     @classmethod
     def column_encode(cls, column_name):
@@ -173,7 +165,6 @@ DIALECTS = {
 
 
 class SQLMeasureProvider(MeasureProvider):
-    # TODO: Handle unit-aggregation
 
     def __init__(self, *args, sql=None, db_client=None, dialect='presto', **kwargs):
         assert db_client is not None, "Must specify an (Omniduct-compatible) database client."
@@ -224,7 +215,6 @@ class SQLMeasureProvider(MeasureProvider):
             groupby=self._get_groupby_sql(field_map, segment_by),
             joins=joins,
             constraints=self._get_where_sql(field_map, where),
-            positional_groupby=self.dialect.POSITIONAL_GROUPBY,
         )
         return sql
 
@@ -245,17 +235,29 @@ class SQLMeasureProvider(MeasureProvider):
 
         for measure in measures:
             if not measure.external:
+                if measure.via_name in field_map:
+                    raise ValueError(measure.via_name)
                 field_map[measure.via_name] = self.dialect.source_column_encode(self_table_name, measure.expr, measure.default)
 
         for dimension in dimensions:
             if not dimension.external:
+                if dimension.via_name in field_map:
+                    raise ValueError(dimension.via_name )
                 field_map[dimension.via_name] = self.dialect.source_column_encode(self_table_name, dimension.expr, dimension.default)
 
         for join in joins:
             for measure in join.measures:
-                field_map[measure.as_via(join.join_prefix).via_name] = self.dialect.source_column_encode(join.name, measure.fieldname(role='measure'), measure.default)
+                if measure.as_via(join.join_prefix) in measures and measures[measure.as_via(join.join_prefix)].external:
+                    map_name = measure.as_via(join.join_prefix).via_name
+                else:
+                    map_name = '/'.join([join.name, measure.via_name])
+                field_map[map_name] = self.dialect.source_column_encode(join.name, measure.fieldname(role='measure'), measure.default)
             for dimension in join.dimensions:
-                field_map[dimension.as_via(join.join_prefix).via_name] = self.dialect.source_column_encode(join.name, dimension.fieldname(role='dimension'), dimension.default)
+                if dimension.as_via(join.join_prefix) in dimensions and dimensions[dimension.as_via(join.join_prefix)].external:
+                    map_name = dimension.as_via(join.join_prefix).via_name
+                else:
+                    map_name = '/'.join([join.name, dimension.via_name])
+                field_map[map_name] = self.dialect.source_column_encode(join.name, dimension.fieldname(role='dimension'), dimension.default)
 
         return field_map
 
@@ -290,18 +292,7 @@ class SQLMeasureProvider(MeasureProvider):
         return aggs
 
     def _get_groupby_sql(self, field_map, dimensions):
-        groupby = []
-
-        count = 1
-        for dimension in dimensions:
-            if not dimension.private:
-                if self.dialect.POSITIONAL_GROUPBY:
-                    groupby.append(count)
-                    count += 1
-                else:
-                    groupby.append(field_map[dimension.via_name])
-
-        return groupby
+        return [field_map[dimension.via_name] for dimension in dimensions if not dimension.private]
 
     def _get_where_sql(self, field_map, where):
         if where is None:
@@ -328,5 +319,5 @@ class SQLTableMeasureProvider(SQLMeasureProvider):
         return self._template_environment.get_template(self.dialect.TEMPLATE_TABLE).render(
             table=self.name,
             measures=[m for m in measures if m != 'count' and not m.external],
-            dimensions=segment_by
+            dimensions=[d for d in segment_by if not d.external],
         )
