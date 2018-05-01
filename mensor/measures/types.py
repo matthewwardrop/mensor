@@ -10,7 +10,7 @@ import six
 from uncertainties import ufloat
 from uncertainties.unumpy import uarray
 
-from ..utils import startseq_match
+from mensor.utils import startseq_match
 
 __all__ = ['Join', '_Dimension', '_StatisticalUnitIdentifier', '_Measure', 'MeasureDataFrame']
 
@@ -482,14 +482,14 @@ DISTRIBUTION_STATS = {
             scipy.stats.distributions.norm,
             {
                 'loc': lambda sum, sos, count: sum / count,
-                'scale': lambda sum, sos, count: np.sqrt((sos - sum**2 / count) / (count - 1)) / count
+                'scale': lambda sum, sos, count: np.sqrt((sos - sum**2 / count) / (count - 1))
             }
         ),
         MEASURE_AGG_METHODS.SUM: (
             scipy.stats.distributions.norm,
             {
                 'loc': lambda sum, sos, count: sum,
-                'scale': lambda sum, sos, count: np.sqrt((sos - sum**2 / count) / (count - 1))
+                'scale': lambda sum, sos, count: np.sqrt(sos - sum**2 / count)
             }
         )
     },
@@ -568,14 +568,17 @@ class MeasureDataFrame(pd.DataFrame):
 
         stats = DISTRIBUTION_STATS[distribution][feature]
 
-        if isinstance(stats, tuple):
-            model = stats[0]
-            params = {
-                param: f(*distribution_fields) for param, f in stats[1].items()
-            }
-            return pd.Series(uarray(model.mean(**params), model.std(**params)), name=name, index=self.index)
-        else:
-            return pd.Series(stats(*distribution_fields), name=name, index=self.index)
+        try:
+            if isinstance(stats, tuple):
+                model = stats[0]
+                params = {
+                    param: f(*distribution_fields) for param, f in stats[1].items()
+                }
+                return pd.Series(uarray(model.mean(**params), model.std(**params)), name=name, index=self.index)
+            else:
+                return pd.Series(stats(*distribution_fields), name=name, index=self.index)
+        except:
+            return pd.Series(np.nan, index=self.index)
 
     # Allow getting measures by distribution stats
     def __getitem__(self, name):

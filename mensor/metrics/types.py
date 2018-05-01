@@ -41,4 +41,4 @@ class RatioMetric(Metric):
 
     @property
     def requires(self):
-        return [self.numerator, self.denominator]
+        return [self.numerator.split('|')[0], self.denominator.split('|')[0]]
