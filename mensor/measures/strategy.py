@@ -3,8 +3,7 @@ from collections import OrderedDict
 from enum import Enum
 
 from .context import And, EvaluationContext
-from .types import (DimensionBundle, Join, _Dimension,
-                    _StatisticalUnitIdentifier)
+from .types import DimensionBundle, Join, _StatisticalUnitIdentifier
 
 
 class STRATEGY_TYPE(Enum):
@@ -166,6 +165,8 @@ class EvaluationStrategy(object):
 
     @property
     def join_type(self):
+        if self.strategy_type == STRATEGY_TYPE.UNIT_REBASE:
+            return 'left'
         if self.where is not None and len(self.where.dimensions) > 0:
             return 'inner'
         for join in self.joins:
@@ -342,7 +343,7 @@ class EvaluationStrategy(object):
                 provider=provision.provider,
                 unit_type=unit_type,
                 measures=provision.measures,
-                segment_by=provision.dimensions,
+                segment_by=provision.dimensions + ([provision.provider.resolve(d).as_private for d in constraints_for_provision(provision).dimensions if not provision.dimensions or d not in provision.dimensions] if constraints_for_provision(provision) else []),
                 where=constraints_for_provision(provision),
                 join_prefix=provision.join_prefix
             ) for provision in provisions
