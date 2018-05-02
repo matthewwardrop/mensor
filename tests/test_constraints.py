@@ -1,6 +1,6 @@
 import unittest
 
-from mensor.measures.context import And, Constraint, EvaluationContext, Or
+from mensor.measures.constraints import And, Constraint, Or
 
 
 class PandasMeasureProviderTests(unittest.TestCase):
@@ -130,11 +130,3 @@ class PandasMeasureProviderTests(unittest.TestCase):
         self.assertEqual(c.generic, Constraint.from_spec({'b': 20}))
 
         self.assertRaises(ValueError, Constraint.from_spec, ({'*/b': 20}, {'c': 30}))
-
-    def test_evaluation_context(self):
-        ev = EvaluationContext.from_spec(name='test', unit_type='test', spec={'a': 10})
-
-        constraint = Constraint.from_spec({'a': 10})
-
-        self.assertEquals(ev.scoped_constraint, constraint)
-        self.assertIsNone(ev.generic_constraint)

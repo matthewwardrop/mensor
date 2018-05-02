@@ -3,7 +3,7 @@ import textwrap
 
 import jinja2
 
-from mensor.measures.context import CONSTRAINTS
+from mensor.measures.constraints import CONSTRAINTS
 from mensor.measures.provider import MeasureProvider
 from mensor.measures.types import AGG_METHODS
 
@@ -295,9 +295,8 @@ class SQLMeasureProvider(MeasureProvider):
         return [field_map[dimension.via_name] for dimension in dimensions if not dimension.private]
 
     def _get_where_sql(self, field_map, where):
-        if where is None:
-            return None
-        return self._constraint_map(where.kind)(where, field_map, self._get_where_sql)
+        if where:
+            return self._constraint_map(where.kind)(where, field_map, self._get_where_sql)
 
     @property
     def _agg_methods(self):

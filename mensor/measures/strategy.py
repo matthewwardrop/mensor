@@ -2,7 +2,7 @@ import json
 from collections import OrderedDict
 from enum import Enum
 
-from .context import And, EvaluationContext
+from .constraints import And, Constraint
 from .types import DimensionBundle, Join, _StatisticalUnitIdentifier
 
 
@@ -41,7 +41,7 @@ class EvaluationStrategy(object):
         constrained.
         """
         unconstrained = []
-        constrained_dimensions = self.where.dimensions if self.where else []
+        constrained_dimensions = self.where.dimensions
         constrained_dimensions.extend(self.join_on_right)
 
         for dimension in self.provider.dimensions_for_unit(self.unit_type):
@@ -167,7 +167,7 @@ class EvaluationStrategy(object):
     def join_type(self):
         if self.strategy_type == STRATEGY_TYPE.UNIT_REBASE:
             return 'left'
-        if self.where is not None and len(self.where.dimensions) > 0:
+        if len(self.where.dimensions) > 0:
             return 'inner'
         for join in self.joins:
             if join.join_type == 'inner':
@@ -273,13 +273,12 @@ class EvaluationStrategy(object):
             registry._resolve_dimension(unit_type, dimension) for dimension in segment_by
         ]
 
-        where = EvaluationContext.from_spec(unit_type=unit_type.name, spec=where)
-        assert where.unit_type == unit_type.name
+        where = Constraint.from_spec(where)
         where_dimensions = [
             (
                 registry._resolve_dimension(unit_type, dimension).as_implicit
             )
-            for dimension in (where.scoped_constraint.dimensions if where.scoped_constraint else [])
+            for dimension in where.scoped.dimensions
             if dimension not in segment_by
         ]
 
@@ -325,36 +324,32 @@ class EvaluationStrategy(object):
             dimensions=current_evaluation.dimensions
         )
 
-        def constraints_for_provision(provision):
-            provision_constraints = []
-            for constraint in where.generic_applicable:
-                if len(
-                    set(constraint.dimensions)
-                    .difference(provision.provider.identifiers)
-                    .difference(provision.provider.dimensions)
-                    .difference(provision.provider.measures)
-                ) == 0:
-                    provision_constraints.append(constraint)
-            return And.from_operands(provision_constraints)
-
-        evaluations = [
-            cls(
-                registry=registry,
-                provider=provision.provider,
-                unit_type=unit_type,
-                measures=provision.measures,
-                segment_by=provision.dimensions + ([provision.provider.resolve(d).as_private for d in constraints_for_provision(provision).dimensions if not provision.dimensions or d not in provision.dimensions] if constraints_for_provision(provision) else []),
-                where=constraints_for_provision(provision),
-                join_prefix=provision.join_prefix
-            ) for provision in provisions
-        ]
+        evaluations = []
+        for provision in provisions:
+            generic_constraints = where.generic_for_provider(provision.provider, unit_type)
+            generic_constraint_dimensions = [
+                provision.provider.resolve(dimension).as_private
+                for dimension in generic_constraints.dimensions
+                if not provision.dimensions or dimension not in provision.dimensions
+            ]
+            evaluations.append(
+                cls(
+                    registry=registry,
+                    provider=provision.provider,
+                    unit_type=unit_type,
+                    measures=provision.measures,
+                    segment_by=provision.dimensions + generic_constraint_dimensions,
+                    where=generic_constraints,
+                    join_prefix=provision.join_prefix
+                )
+            )
 
         # Step 3: For each next unit_type, recurse problem and join into above query
 
         for foreign_key, dim_bundle in next_evaluations.items():
             foreign_strategy = cls.from_spec(registry=registry, unit_type=foreign_key,
                                              measures=dim_bundle.measures, segment_by=dim_bundle.dimensions,
-                                             where=where.via_next(foreign_key.name) if where is not None else None, **opts)
+                                             where=where.via_next(foreign_key.name), **opts)
 
             if foreign_key != dim_bundle.unit_type:  # Reverse foreign key join
                 foreign_key = dim_bundle.unit_type
@@ -380,7 +375,7 @@ class EvaluationStrategy(object):
         # requested in `segment_by`
 
         for dimension in strategy.segment_by:
-            if dimension.implicit and dimension in where.scoped_applicable_dimensions:
+            if dimension.implicit and dimension in where.scoped_applicable.dimensions:
                 index = strategy.segment_by.index(dimension)
                 strategy.segment_by[index] = strategy.segment_by[index].as_private
 

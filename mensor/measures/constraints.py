@@ -7,6 +7,7 @@ import six
 
 
 class CONSTRAINTS(Enum):
+    NULL = 'null'
     AND = 'and'
     OR = 'or'
     IN = 'in'
@@ -106,6 +107,43 @@ class BaseConstraint(metaclass=ABCMeta):
     def __invert__(self):
         raise NotImplementedError
 
+    # Convenience methods to help with building evaluation strategies
+
+    @property
+    def scoped_applicable(self):
+        if self.scoped.kind is CONSTRAINTS.AND:  # Since there is automatic suppression of nested `And`s, this one check if sufficient for generality
+            applicable = [
+                op for op in self.scoped.operands if op.applicable
+            ]
+        elif self.scoped.applicable:
+            applicable = [self.scoped]
+        else:
+            applicable = []
+        return And.from_operands(applicable)
+
+    def generic_for_provider(self, provider, unit_type):
+        if self.scoped.kind is CONSTRAINTS.AND:
+            generic_constraints = self.scoped.operands[:]
+        elif self:
+            generic_constraints = [self]
+        else:
+            generic_constraints = []
+
+        provider_features = (
+            set(provider.identifiers)
+            .union(provider.dimensions)
+            .union(provider.measures)
+        )
+
+        applicable = []
+        for constraint in generic_constraints:
+            if len(set(constraint.dimensions).difference(provider_features)):
+                applicable.append(constraint)
+            elif len(set(constraint.via_next(unit_type.name, include_generic=True).dimensions).difference(provider_features)):
+                applicable.append(constraint.via_next(unit_type.name, include_generic=True))
+
+        return And.from_operands(applicable)
+
 
 class ContainerConstraint(BaseConstraint):
     """
@@ -121,7 +159,7 @@ class ContainerConstraint(BaseConstraint):
     def from_operands(cls, *operands, resolvable=True, simplify=True):
         ops = []
         for operand in operands:
-            if operand is None:
+            if not operand:
                 continue
             elif isinstance(operand, list):
                 ops.extend(operand)
@@ -132,7 +170,7 @@ class ContainerConstraint(BaseConstraint):
             else:
                 raise ValueError("All children of a `ContainerConstraint` must be instances of subclasses of `BaseConstraint`.")
         if len(ops) == 0:
-            return None
+            return NullConstraint()
         constraint = cls(ops, resolvable=resolvable)
         if simplify:
             constraint = constraint.simplify()
@@ -145,14 +183,12 @@ class ContainerConstraint(BaseConstraint):
             raise RuntimeError("Attempted to create an empty constraint container.")
 
     def add_operand(self, other):
-        if other is None:
+        if not other:
             return self
         return self.from_operands(other, *self.operands)
 
     def add_operands(self, others):
-        if others is None:
-            return self
-        return self.from_operands(*self.operands, *others)
+        return self.from_operands(*self.operands, others)
 
     def simplify(self):
         if self.resolvable and len(self.operands) == 1:
@@ -163,17 +199,17 @@ class ContainerConstraint(BaseConstraint):
 
     @property
     def dimensions(self):
-        return sum([op.dimensions for op in self.operands], [])
+        return [op.dimensions for op in self.operands]
 
     @property
     def depth(self):
         return min(op.depth for op in self.operands)
 
-    def via_next(self, foreign_key):
+    def via_next(self, foreign_key, include_generic=False):
         # Any None's in this list will cause the new parent object to be unresolvable.
-        n = self.from_operands(*[op.via_next(foreign_key) for op in self.operands], simplify=False, resolvable=self.resolvable)
-        if n is None:
-            return None
+        n = self.from_operands(*[op.via_next(foreign_key, include_generic=include_generic) for op in self.operands], simplify=False, resolvable=self.resolvable)
+        if not n:
+            return n
         if isinstance(n, Or) and len(n.operands) < len(self.operands):
             n._resolvable = False
         return n
@@ -300,14 +336,78 @@ class Or(ContainerConstraint):
         return "( {} )".format(" | ".join(str(op) for op in self.operands))
 
 
+class NullConstraint(BaseConstraint):
+
+    @property
+    def kind(self):
+        return CONSTRAINTS.NULL
+
+    # Specification of features affected by this constraint
+
+    @property
+    def dimensions(self):
+        return []
+
+    @property
+    def depth(self):
+        return -1
+
+    def via_next(self, foreign_key, include_generic=False):
+        return self
+
+    # Extraction of generic and scoped constraints
+
+    @property
+    def resolvable(self):
+        return False
+
+    @property
+    def has_generic(self):
+        return False
+
+    @property
+    def has_scoped(self):
+        return False
+
+    @property
+    def generic(self):
+        return self
+
+    @property
+    def scoped(self):
+        return self
+
+    # Mathematical operations on constraints
+
+    def __eq__(self, other):
+        return other.kind == self.kind
+
+    def __and__(self, other):
+        return other
+
+    def __or__(self, other):
+        return other
+
+    def __invert__(self):
+        raise NotImplementedError
+
+    def __nonzero__(self):  # Python 2
+        return False
+
+    def __bool__(self):  # Python 3
+        return False
+
+    def __repr__(self):
+        return "Ø"
+
+
 class Constraint(BaseConstraint):
 
     # Definition methods
-
     @classmethod
     def from_spec(cls, spec):
-        if spec is None:
-            return None
+        if not spec:
+            return NullConstraint()
         elif isinstance(spec, BaseConstraint):
             return spec
         elif isinstance(spec, list):
@@ -349,6 +449,8 @@ class Constraint(BaseConstraint):
     def __init__(self, field, relation, value, generic=False):
         if relation not in ('==', '<', '<=', '>', '>=', 'in'):
             raise ValueError("Invalid relation specified in constraint.")
+        if generic and field.count('/') > 1:
+            raise ValueError("Generic field name cannot consist of more than one '/'.")
         self.field = field
         self.relation = relation
         self.value = value
@@ -378,12 +480,17 @@ class Constraint(BaseConstraint):
 
     @property
     def depth(self):
+        if self.generic:
+            return 0
         return len(self.field.split('/')) - 1
 
-    def via_next(self, foreign_key):
+    def via_next(self, foreign_key, include_generic=False):
+        if not include_generic and self.generic:
+            return self
         s = self.field.split('/')
         if len(s) > 1 and s[0] == foreign_key:
             return self.__class__('/'.join(s[1:]), self.relation, self.value)
+        return NullConstraint()
 
     # Extraction of generic and scoped constraints
 
@@ -403,11 +510,13 @@ class Constraint(BaseConstraint):
     def generic(self):
         if self._generic:
             return self
+        return NullConstraint()
 
     @property
     def scoped(self):
         if not self._generic:
             return self
+        return NullConstraint()
 
     # Mathematical operations on constraints
     def __eq__(self, other):
@@ -436,94 +545,3 @@ class Constraint(BaseConstraint):
 
     def __repr__(self):
         return "{}{}{}".format(('*/' if self.generic else '') + self.field, self.relation if self.relation is not 'in' else ' ∈ ', self.value.__repr__())
-
-
-class EvaluationContext(object):
-
-    @classmethod
-    def from_spec(cls, name=None, unit_type=None, spec=None):
-        if isinstance(spec, EvaluationContext):
-            return spec
-        constraint = Constraint.from_spec(spec)
-        if constraint is None:
-            generic_constraint = scoped_constraint = None
-        else:
-            generic_constraint = constraint.generic
-            scoped_constraint = constraint.scoped
-        return cls(name=name, unit_type=unit_type, scoped_constraint=scoped_constraint, generic_constraint=generic_constraint)
-
-    def __init__(self, name=None, unit_type=None, scoped_constraint=None, generic_constraint=None):
-        self.name = name
-        self.unit_type = unit_type
-        self.generic_constraint = generic_constraint
-        self.scoped_constraint = scoped_constraint
-
-    def add_constraint(self, constraint, generic=False):
-        assert isinstance(constraint, BaseConstraint)
-        if generic:
-            if self.generic_constraint is not None:
-                self.generic_constraint &= constraint
-            else:
-                self.generic_constraint = constraint
-        else:
-            if self.scoped_constraint is not None:
-                self.scoped_constraint &= constraint
-            else:
-                self.scoped_constraint = constraint
-
-    def via_next(self, foreign_key):
-        if not isinstance(foreign_key, (type(None),) + six.string_types):
-            foreign_key = foreign_key.name
-        return self.__class__(
-            name=self.name,
-            unit_type=foreign_key,
-            scoped_constraint=self.scoped_constraint.via_next(foreign_key) if self.scoped_constraint else None,
-            generic_constraint=self.generic_constraint
-        )
-
-    # Convenience methods to help with building evaluation strategies
-
-    @property
-    def scoped_applicable(self):
-        if self.scoped_constraint is None:
-            return []
-        elif self.scoped_constraint.kind is CONSTRAINTS.AND:  # Since there is automatic suppression of nested `And`s, this one check if sufficient for generality
-            return [
-                op for op in self.scoped_constraint.operands if op.applicable
-            ]
-        elif self.scoped_constraint.applicable:
-            return [self.scoped_constraint]
-        return []
-
-    @property
-    def generic_applicable(self):
-        if self.generic_constraint is None:
-            return []
-        elif self.generic_constraint.kind is CONSTRAINTS.AND:  # Since there is automatic suppression of nested `And`s, this one check if sufficient for generality
-            return [
-                op for op in self.generic_constraint.operands if op.applicable
-            ]
-        elif self.generic_constraint.applicable:
-            return [self.generic_constraint]
-        return []
-
-    @property
-    def scoped_applicable_dimensions(self):
-        return list(itertools.chain(
-            *[op.dimensions for op in self.scoped_applicable]
-        ))
-
-    @property
-    def generic_applicable_dimensions(self):
-        return list(itertools.chain(
-            *[op.dimensions for op in self.generic_applicable]
-        ))
-
-    @property
-    def dimensions(self):
-        dimensions = []
-        if self.scoped_constraint:
-            dimensions.extend(self.scoped_constraint.dimensions)
-        if self.generic_constraint:
-            dimensions.extend(self.generic_constraint.dimensions)
-        return dimensions

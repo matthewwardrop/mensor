@@ -5,7 +5,7 @@ import six
 
 from mensor.utils import AttrDict
 
-from .context import CONSTRAINTS, And, Constraint
+from .constraints import CONSTRAINTS, And, Constraint
 from .types import (AGG_METHODS, Join, MeasureDataFrame, MeasureSeries,
                     _Dimension, _Measure, _StatisticalUnitIdentifier)
 
@@ -290,7 +290,7 @@ class MeasureProvider(object):
             measures (list<str, _Measure>): The measures to be calculated.
             segment_by (list<str, _Feature>): The dimensions by which to segment
                 the measure computations.
-            where (dict, list, tuple, Constraint, EvaluationContext): The
+            where (dict, list, tuple, BaseConstraint): The
                 constraints within which measures should be computed.
             stats (bool): Whether to keep track of the distribution of the
                 measures, rather than just their sum.

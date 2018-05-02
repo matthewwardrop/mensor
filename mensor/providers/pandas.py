@@ -1,6 +1,6 @@
 import pandas as pd
 
-from mensor.measures.context import CONSTRAINTS
+from mensor.measures.constraints import CONSTRAINTS
 from mensor.measures.provider import MeasureProvider
 from mensor.measures.types import AGG_METHODS, _Measure
 
