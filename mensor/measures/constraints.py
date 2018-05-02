@@ -162,7 +162,7 @@ class ContainerConstraint(BaseConstraint):
             if not operand:
                 continue
             elif isinstance(operand, list):
-                ops.extend(operand)
+                ops.extend([op for op in operand if op])
             elif isinstance(operand, cls):
                 ops.extend(operand.operands)
             elif isinstance(operand, BaseConstraint):
@@ -199,7 +199,7 @@ class ContainerConstraint(BaseConstraint):
 
     @property
     def dimensions(self):
-        return [op.dimensions for op in self.operands]
+        return list(itertools.chain(*[op.dimensions for op in self.operands]))
 
     @property
     def depth(self):
