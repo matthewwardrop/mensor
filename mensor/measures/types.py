@@ -88,7 +88,7 @@ class _ProvidedFeature(object):
         return ('/'.join([self.via, self.name]) if self.via is not None else self.name) + ('({})'.format(','.join(attrs)) if attrs else '')
 
     def __hash__(self):
-        return hash(self.name)
+        return hash(self.via_name)
 
     def __eq__(self, other):
         if isinstance(other, self.__class__):
@@ -276,7 +276,7 @@ class _ResolvedFeature(object):
         )
 
     def __hash__(self):
-        return hash(self.name)
+        return hash(self.via_name)
 
     def __eq__(self, other):
         if isinstance(other, _ResolvedFeature):
