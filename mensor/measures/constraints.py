@@ -60,7 +60,7 @@ class BaseConstraint(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def via_next(self, foreign_key):
+    def via_next(self, foreign_key, include_generic=False):
         raise NotImplementedError
 
     # Extraction of generic and scoped constraints
@@ -122,24 +122,24 @@ class BaseConstraint(metaclass=ABCMeta):
         return And.from_operands(applicable)
 
     def generic_for_provider(self, provider, unit_type):
-        if self.scoped.kind is CONSTRAINTS.AND:
-            generic_constraints = self.scoped.operands[:]
-        elif self:
+        if self.generic.kind is CONSTRAINTS.AND:
+            generic_constraints = self.generic.operands[:]
+        elif self.generic:
             generic_constraints = [self]
         else:
             generic_constraints = []
 
         provider_features = (
-            set(provider.identifiers)
-            .union(provider.dimensions)
-            .union(provider.measures)
+            set(identifier.name for identifier in provider.identifiers)
+            .union(dimension.name for dimension in provider.dimensions)
+            .union(measure.name for measure in provider.measures)
         )
 
         applicable = []
         for constraint in generic_constraints:
-            if len(set(constraint.dimensions).difference(provider_features)):
+            if len(set(constraint.dimensions).difference(provider_features)) == 0:
                 applicable.append(constraint)
-            elif len(set(constraint.via_next(unit_type.name, include_generic=True).dimensions).difference(provider_features)):
+            elif len(set(constraint.via_next(unit_type.name, include_generic=True).dimensions).difference(provider_features)) == 0:
                 applicable.append(constraint.via_next(unit_type.name, include_generic=True))
 
         return And.from_operands(applicable)
@@ -230,11 +230,11 @@ class ContainerConstraint(BaseConstraint):
 
     @property
     def generic(self):
-        return self.__class__.from_operands([operand for operand in self.operands if operand.has_generic])
+        return self.__class__.from_operands([operand.generic for operand in self.operands if operand.has_generic])
 
     @property
     def scoped(self):
-        return self.__class__.from_operands([operand for operand in self.operands if operand.has_scoped])
+        return self.__class__.from_operands([operand.scoped for operand in self.operands if operand.has_scoped])
 
     # Mathematical operations
     def __eq__(self, other):
@@ -489,7 +489,7 @@ class Constraint(BaseConstraint):
             return self
         s = self.field.split('/')
         if len(s) > 1 and s[0] == foreign_key:
-            return self.__class__('/'.join(s[1:]), self.relation, self.value)
+            return self.__class__('/'.join(s[1:]), self.relation, self.value, generic=self.generic)
         return NullConstraint()
 
     # Extraction of generic and scoped constraints
@@ -508,13 +508,13 @@ class Constraint(BaseConstraint):
 
     @property
     def generic(self):
-        if self._generic:
+        if self.has_generic:
             return self
         return NullConstraint()
 
     @property
     def scoped(self):
-        if not self._generic:
+        if self.has_scoped:
             return self
         return NullConstraint()
 
