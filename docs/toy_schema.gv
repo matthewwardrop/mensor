@@ -1,0 +1,51 @@
+digraph {
+    graph [pad="0.5", nodesep="0.5", ranksep="1"];
+    node [shape=plain]
+    rankdir=LR;
+
+
+Transactions [label=<
+<table border="0" cellborder="1" cellspacing="0">
+  <tr><td bgcolor="#dddddd" width="200px"><i>transactions</i></td></tr>
+  <tr><td port="transaction">^transaction</td></tr>
+  <tr><td port="buyer">person:buyer (id_buyer)</td></tr>
+  <tr><td port="seller">person:seller (id_seller)</td></tr>
+  <tr><td port="value">value</td></tr>
+  <tr><td port="ds">ds [partition]</td></tr>
+</table>>];
+
+People [label=<
+<table border="0" cellborder="1" cellspacing="0">
+  <tr><td bgcolor="#dddddd" width="200px"><i>people</i></td></tr>
+  <tr><td port="person">^person</td></tr>
+  <tr><td port="name">name</td></tr>
+  <tr><td port="age">age</td></tr>
+  <tr><td port="ds">ds</td></tr>
+</table>>];
+
+People2 [label=<
+<table border="0" cellborder="1" cellspacing="0">
+  <tr><td bgcolor="#dddddd" width="200px"><i>people2</i></td></tr>
+  <tr><td port="person">^person</td></tr>
+  <tr><td port="geography">geography</td></tr>
+  <tr><td port="ds">ds</td></tr>
+</table>>];
+
+Geographies [label=<
+<table border="0" cellborder="1" cellspacing="0">
+  <tr><td bgcolor="#dddddd" width="200px"><i>geographies</i></td></tr>
+  <tr><td port="geography">^geography</td></tr>
+  <tr><td port="name">name</td></tr>
+  <tr><td port="population">population</td></tr>
+  <tr><td port="ds">ds</td></tr>
+</table>>];
+
+Transactions:buyer -> People:person
+Transactions:seller -> People:person
+
+People:person -> People2:person
+People2:person -> People:person
+
+People2:geography -> Geographies:geography
+
+}
