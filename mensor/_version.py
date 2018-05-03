@@ -8,5 +8,6 @@ __dependencies__ = [
     'pandas',
     'uncertainties',
     'six',
-    'numpy'
+    'numpy',
+    'scipy'
 ]
