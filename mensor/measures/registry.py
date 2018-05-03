@@ -213,12 +213,11 @@ class MeasureRegistry(object):
         via = ''
         features = None
 
-        private = external = implicit = False
+        attrs = {'kind': kind}
 
         if isinstance(feature, (_ResolvedFeature, _ProvidedFeature)):
-            private = feature.private
-            external = feature.external
-            implicit = feature.implicit
+            attrs = feature.attrs
+            del attrs['name']
             feature = feature.via_name  # Re-resolve any resolved feature, since resolved features are currently not deeply resolved
 
         if isinstance(feature, str):
@@ -232,6 +231,7 @@ class MeasureRegistry(object):
             if via_suffix:
                 eff_unit_type = self._resolve_identifier(s[-2])
                 via += ('/' + via_suffix) if via else via_suffix
+            attrs['via'] = via
 
             # Look for feature starting from most specific unit key with specificity
             # less than or equal to provided unit_type. Unit_type name length
@@ -242,7 +242,9 @@ class MeasureRegistry(object):
                         for feature_candidate in sorted(feature_index[avail_unit_type], key=lambda x: len(x.name), reverse=True):
                             if feature_candidate.matches(feature):
                                 features = feature_index[avail_unit_type][feature_candidate]
-                                feature = feature_candidate
+                                if feature != feature_candidate.name:
+                                    attrs['alias'] = feature
+                                    feature = feature_candidate.name
                                 break
                 else:  # Handle all other cases.
                     if avail_unit_type.matches(eff_unit_type) and feature in feature_index[avail_unit_type]:
@@ -251,13 +253,10 @@ class MeasureRegistry(object):
             if features is None:
                 raise ValueError("No such {} `{}` for unit type `{}`.".format(kind, feature, eff_unit_type))
 
-        elif isinstance(feature, _ProvidedFeature):
-            features = [feature]
-
         else:
             raise ValueError("Invalid type for {}: `{}`".format(kind, feature.__class__))
 
-        r = _ResolvedFeature(feature.name if isinstance(feature, _ProvidedFeature) else feature, via=via, unit_type=unit_type, kind=kind, providers=[d.provider for d in features], external=external, private=private, implicit=implicit)
+        r = _ResolvedFeature(feature, providers=[d.provider for d in features], **attrs)
         return r
 
     def _resolve_foreign_key(self, unit_type, foreign_type):

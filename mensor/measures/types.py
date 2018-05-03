@@ -47,7 +47,7 @@ class Join(object):
 
 class _FeatureAttrsMixin(object):
 
-    def __init__(self, name, unit_type=None, via=None, external=False, private=False, implicit=False, kind=None):
+    def __init__(self, name, unit_type=None, via=None, external=False, private=False, implicit=False, kind=None, alias=None):
         self.name = name
         self.unit_type = unit_type
         self.external = external
@@ -55,12 +55,28 @@ class _FeatureAttrsMixin(object):
         self.implicit = implicit
         self.via = via or None
         self.kind = kind
+        self.alias = alias
 
-    def _as(self, **attrs):
+    def _with_attrs(self, **attrs):
         obj = copy.copy(self)
         for attr, value in attrs.items():
+            if not hasattr(obj, attr):
+                raise ValueError("'{}' is not a valid feature attribute.".format(attr))
             setattr(obj, attr, value)
         return obj
+
+    @property
+    def attrs(self):
+        return {
+            'name': self.name,
+            'unit_type': self.unit_type,
+            'external': self.external,
+            'private': self.private,
+            'implicit': self.implicit,
+            'via': self.via,
+            'kind': self.kind,
+            'alias': self.alias
+        }
 
     @property
     def name(self):
@@ -74,27 +90,30 @@ class _FeatureAttrsMixin(object):
 
     @property
     def as_external(self):
-        return self._as(external=True)
+        return self._with_attrs(external=True)
 
     @property
     def as_internal(self):
-        return self._as(external=False)
+        return self._with_attrs(external=False)
 
     @property
     def as_private(self):
-        return self._as(private=True)
+        return self._with_attrs(private=True)
 
     @property
     def as_public(self):
-        return self._as(private=False)
+        return self._with_attrs(private=False)
 
     @property
     def as_implicit(self):
-        return self._as(implicit=True)
+        return self._with_attrs(implicit=True)
 
     @property
     def as_explicit(self):
-        return self._as(implicit=True)
+        return self._with_attrs(implicit=True)
+
+    def with_alias(self, alias):
+        return self._with_attrs(alias=alias or None)
 
     def as_via(self, *vias):
         vias = [via.name if isinstance(via, _ProvidedFeature) else via for via in vias]
@@ -105,13 +124,13 @@ class _FeatureAttrsMixin(object):
         current_vias = self.via.split('/') if self.via is not None else []
         if len(vias) == 1 and (not vias[0] or len(current_vias) > 0 and vias[0] == current_vias[-1]):
             return self
-        return self._as(via='/'.join(vias + current_vias))
+        return self._with_attrs(via='/'.join(vias + current_vias))
 
     @property
     def via_next(self):
         s = self.via.split('/')
         if len(s) > 0:
-            return self._as(unit_type=s[0], via='/'.join(s[1:]))
+            return self._with_attrs(unit_type=s[0], via='/'.join(s[1:]))
         return None
 
     @property
@@ -133,12 +152,27 @@ class _FeatureAttrsMixin(object):
             return '{}/{}'.format(self.via, self.name)
         return self.name
 
+    # Methods to assist MeasureProviders with handling data field names
+    def fieldname(self, role=None):
+        if self.alias:
+            if self.via:
+                return '{}/{}'.format(self.via, self.alias)
+            return self.alias
+        return self.via_name
+
     def __lt__(self, other):  # TODO: Where is this used?
         return self.name.__lt__(other.name)
 
-    # Methods to assist MeasureProviders with handling data field names
-    def fieldname(self, role=None):
-        return self.via_name
+    def __repr__(self):
+        attrs = []
+        for attr in ['external', 'private', 'implicit']:
+            if getattr(self, attr, False):
+                attrs.append(attr[0])
+        return (
+            self.via_name
+            + ('[{}]'.format(self.alias) if self.alias else '')
+            + ('({})'.format(','.join(attrs)) if attrs else '')
+        )
 
 
 class _ProvidedFeature(_FeatureAttrsMixin):
@@ -157,22 +191,15 @@ class _ProvidedFeature(_FeatureAttrsMixin):
             raise ValueError("Unrecognised specification of {}: {}".format(cls.__name__, spec))
 
     def __init__(self, name, expr=None, default=None, desc=None, shared=False, provider=None,
-                 external=False, private=False, implicit=False, via=None, kind=None):
+                 **attrs):
 
-        _FeatureAttrsMixin.__init__(self, name=name, external=external, private=private, implicit=implicit, via=via, kind=kind)
+        _FeatureAttrsMixin.__init__(self, name=name, **attrs)
 
         self.expr = expr or name
         self.default = default
         self.desc = desc
         self.shared = shared
         self.provider = provider
-
-    def __repr__(self):
-        attrs = (['e'] if self.external else []) + (['p'] if self.private else [])
-        return ('/'.join([self.via, self.name]) if self.via is not None else self.name) + ('({})'.format(','.join(attrs)) if attrs else '')
-
-    def __hash__(self):
-        return hash(self.via_name)
 
     def __eq__(self, other):
         if isinstance(other, self.__class__):
@@ -186,13 +213,14 @@ class _ProvidedFeature(_FeatureAttrsMixin):
         else:
             return NotImplemented
 
+    def __hash__(self):
+        return hash(self.via_name)
+
 
 class _ResolvedFeature(_FeatureAttrsMixin):
 
-    def __init__(self, name, via=None, unit_type=None, kind=None, providers=[],
-                 external=False, private=False, implicit=False):
-
-        _FeatureAttrsMixin.__init__(self, name=name, unit_type=unit_type, via=via, external=external, private=private, implicit=implicit, kind=kind)
+    def __init__(self, name, providers=[], **attrs):
+        _FeatureAttrsMixin.__init__(self, name=name, **attrs)
         self.providers = providers
 
     @property
@@ -222,27 +250,13 @@ class _ResolvedFeature(_FeatureAttrsMixin):
         from .provider import MeasureProvider
         if not isinstance(provider, MeasureProvider):
             provider = self.providers[provider]
-
-        dim = provider.resolve(self.name)
-        if self.external:
-            dim = dim.as_external
-        if self.private:
-            dim = dim.as_private
-        if self.implicit:
-            dim = dim.as_implicit
-
-        return dim
-
-    def choose_provider(self, provider):
-        self.providers = {provider: self.providers[provider]}
+        return provider.resolve(self.name)._with_attrs(**self.attrs)
 
     def __repr__(self):
-        attrs = (['e'] if self.external else []) + (['p'] if self.private else []) + (['i'] if self.implicit else [])
         return (
-            "Resolved([{}/]{}{}, {})".format(
+            "Resolved([{}/]{}, {})".format(
                 self.unit_type.name if self.unit_type else '*',
-                ('/'.join([self.via, self.name]) if self.via is not None else self.name),
-                ('({})'.format(','.join(attrs)) if attrs else ''),
+                _FeatureAttrsMixin.__repr__(self),
                 len(self.providers),
             )
         )
@@ -328,7 +342,7 @@ class _StatisticalUnitIdentifier(_ProvidedFeature):
         elif self.is_unique:
             prefix = '*'
         if self.is_dummy:
-            suffix = '(d)'
+            suffix += '(d)'
         return prefix + _ProvidedFeature.__repr__(self) + suffix
 
     def matches(self, unit_type, reverse=False):
@@ -354,12 +368,6 @@ class _StatisticalUnitIdentifier(_ProvidedFeature):
 
 class _Measure(_ProvidedFeature):
 
-    # TODO: Types of measures
-    # raw: <name>:type = 'exact', <name>:sum, <name>:sample_size
-    # normal distribution: <name>:type = 'normal', <name>:sum, <name>:sos, <name>:sample_size
-    # binomial distribution: <name>:type = 'binomial', <name>:sum, <name>:sample_size
-    # other
-
     def __init__(self, name, expr=None, default=None, desc=None, unit_agg='sum',
                  distribution='normal', shared=False, provider=None):
         _ProvidedFeature.__init__(self, name, expr=expr, default=default, desc=desc, shared=shared, provider=provider)
@@ -367,9 +375,10 @@ class _Measure(_ProvidedFeature):
         self.distribution = distribution if isinstance(distribution, DISTRIBUTIONS) else DISTRIBUTIONS(distribution)
 
     def fieldname(self, role='measure'):
+        name = _ProvidedFeature.fieldname(self, role=role)
         if role == 'measure':
-            return '{}|raw'.format(self.via_name)
-        return self.via_name
+            return '{}|raw'.format(name)
+        return name
 
     def get_fields(self, stats=True, unit_agg=False, for_pandas=False):
         """

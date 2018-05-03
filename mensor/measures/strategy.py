@@ -91,8 +91,8 @@ class EvaluationStrategy(object):
                     if o.joins:
                         d['joins'] = o.joins
                     return d
-                return str(o)
-        return 'EvaluationStrategy(' + json.dumps(self, indent=4, cls=StrategyEncoder) + ')'
+                return o.__repr__()
+        return 'EvaluationStrategy(' + json.dumps(self, indent=4, cls=StrategyEncoder, ensure_ascii=False) + ')'
 
     def add_join(self, unit_type, strategy):
         # TODO: Make atomic
