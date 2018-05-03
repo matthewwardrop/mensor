@@ -290,21 +290,21 @@ class EvaluationStrategy(object):
 
         def collect_dimensions(dimensions, kind='measures', for_constraint=False):
             for dimension in dimensions:
-                if not dimension.via_next:
+                if not dimension.via:
                     current_evaluation._asdict()[kind].append(dimension)
                 elif (  # Handle reverse foreign key joins
                     (for_constraint or kind == 'measures')
-                    and dimension.via_next in registry.reverse_foreign_keys_for_unit(unit_type)
+                    and dimension.next_unit_type in registry.reverse_foreign_keys_for_unit(unit_type)
                 ):
-                    next_unit_type = registry._resolve_reverse_foreign_key(unit_type, dimension.via_next)
+                    next_unit_type = registry._resolve_reverse_foreign_key(unit_type, dimension.next_unit_type)
                     if next_unit_type not in next_evaluations:
                         next_evaluations[next_unit_type] = DimensionBundle(unit_type=unit_type, dimensions=[], measures=[])
-                    next_evaluations[next_unit_type]._asdict()[kind].append(dimension.resolved_next)
+                    next_evaluations[next_unit_type]._asdict()[kind].append(dimension.via_next)
                 else:
-                    next_unit_type = registry._resolve_foreign_key(unit_type, dimension.via_next)
+                    next_unit_type = registry._resolve_foreign_key(unit_type, dimension.next_unit_type)
                     if next_unit_type not in next_evaluations:
                         next_evaluations[next_unit_type] = DimensionBundle(unit_type=next_unit_type, dimensions=[], measures=[])
-                    next_evaluations[next_unit_type]._asdict()[kind].append(dimension.resolved_next)
+                    next_evaluations[next_unit_type]._asdict()[kind].append(dimension.via_next)
 
         collect_dimensions(measures, kind='measures')
         collect_dimensions(segment_by, kind='dimensions')

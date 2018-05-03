@@ -45,7 +45,103 @@ class Join(object):
         self._name = name
 
 
-class _ProvidedFeature(object):
+class _FeatureAttrsMixin(object):
+
+    def __init__(self, name, unit_type=None, via=None, external=False, private=False, implicit=False, kind=None):
+        self.name = name
+        self.unit_type = unit_type
+        self.external = external
+        self.private = private
+        self.implicit = implicit
+        self.via = via or None
+        self.kind = kind
+
+    def _as(self, **attrs):
+        obj = copy.copy(self)
+        for attr, value in attrs.items():
+            setattr(obj, attr, value)
+        return obj
+
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, name):
+        if not re.match(r'^(?![0-9])[\w_:]+$', name):
+            raise ValueError("Invalid feature name '{}'. All names must consist only of word characters, numbers, underscores and colons, and cannot start with a number.".format(name))
+        self._name = name
+
+    @property
+    def as_external(self):
+        return self._as(external=True)
+
+    @property
+    def as_internal(self):
+        return self._as(external=False)
+
+    @property
+    def as_private(self):
+        return self._as(private=True)
+
+    @property
+    def as_public(self):
+        return self._as(private=False)
+
+    @property
+    def as_implicit(self):
+        return self._as(implicit=True)
+
+    @property
+    def as_explicit(self):
+        return self._as(implicit=True)
+
+    def as_via(self, *vias):
+        vias = [via.name if isinstance(via, _ProvidedFeature) else via for via in vias]
+        # In the case that we are adding a single via, there cannot be two identical components
+        # in a row (patterns can repeat in some instances). To simplify code
+        # elsewhere, we suppress via in the case that len(vias) == 1 and the provided
+        # via is alrady in the via path.
+        current_vias = self.via.split('/') if self.via is not None else []
+        if len(vias) == 1 and (not vias[0] or len(current_vias) > 0 and vias[0] == current_vias[-1]):
+            return self
+        return self._as(via='/'.join(vias + current_vias))
+
+    @property
+    def via_next(self):
+        s = self.via.split('/')
+        if len(s) > 0:
+            return self._as(unit_type=s[0], via='/'.join(s[1:]))
+        return None
+
+    @property
+    def unit_type(self):
+        return self._unit_type
+
+    @unit_type.setter
+    def unit_type(self, unit_type):
+        self._unit_type = unit_type
+
+    @property
+    def next_unit_type(self):
+        if self.via:
+            return self.via.split('/')[0]
+
+    @property
+    def via_name(self):
+        if self.via:
+            return '{}/{}'.format(self.via, self.name)
+        return self.name
+
+    def __lt__(self, other):  # TODO: Where is this used?
+        return self.name.__lt__(other.name)
+
+    # Methods to assist MeasureProviders with handling data field names
+    def fieldname(self, role=None):
+        return self.via_name
+
+
+class _ProvidedFeature(_FeatureAttrsMixin):
 
     @classmethod
     def from_spec(cls, spec, provider=None):
@@ -61,27 +157,15 @@ class _ProvidedFeature(object):
             raise ValueError("Unrecognised specification of {}: {}".format(cls.__name__, spec))
 
     def __init__(self, name, expr=None, default=None, desc=None, shared=False, provider=None,
-                 external=False, private=False, implicit=False, via=None):
-        self.name = name
+                 external=False, private=False, implicit=False, via=None, kind=None):
+
+        _FeatureAttrsMixin.__init__(self, name=name, external=external, private=private, implicit=implicit, via=via, kind=kind)
+
         self.expr = expr or name
         self.default = default
         self.desc = desc
         self.shared = shared
         self.provider = provider
-        self.external = external
-        self.private = private
-        self.implicit = implicit
-        self.via = via
-
-    @property
-    def name(self):
-        return self._name
-
-    @name.setter
-    def name(self, name):
-        if not re.match(r'^(?![0-9])[\w_:]+$', name):
-            raise ValueError("Invalid dimension name. All names must consist only of word characters, numbers, underscores and colons, and cannot start with a number.")
-        self._name = name
 
     def __repr__(self):
         attrs = (['e'] if self.external else []) + (['p'] if self.private else [])
@@ -102,81 +186,14 @@ class _ProvidedFeature(object):
         else:
             return NotImplemented
 
-    @property
-    def as_external(self):
-        dim = copy.copy(self)
-        dim.external = True
-        return dim
 
-    @property
-    def as_internal(self):
-        dim = copy.copy(self)
-        dim.external = False
-        return dim
-
-    @property
-    def as_private(self):
-        dim = copy.copy(self)
-        dim.private = True
-        return dim
-
-    @property
-    def as_public(self):
-        dim = copy.copy(self)
-        dim.private = False
-        return dim
-
-    @property
-    def as_implicit(self):
-        dim = copy.copy(self)
-        dim.implicit = True
-        return dim
-
-    @property
-    def as_explicit(self):
-        dim = copy.copy(self)
-        dim.implicit = False
-        return dim
-
-    def as_via(self, *vias):
-        vias = [via.name if isinstance(via, _ProvidedFeature) else via for via in vias]
-        # In the case that we are adding a single via, there cannot be two identical components
-        # in a row (patterns can repeat in some instances). To simplify code
-        # elsewhere, we suppress via in the case that len(vias) == 1 and the provided
-        # via is alrady in the via path.
-        current_vias = self.via.split('/') if self.via is not None else []
-        if len(vias) == 1 and (not vias[0] or len(current_vias) > 0 and vias[0] == current_vias[-1]):
-            return self
-        dim = copy.copy(self)
-        dim.via = '/'.join(vias + current_vias)
-        return dim
-
-    @property
-    def via_name(self):
-        if self.via is None:
-            return self.name
-        return '{}/{}'.format(self.via, self.name)
-
-    def __lt__(self, other):
-        return self.name.__lt__(other.name)
-
-    # Methods to assist MeasureProviders with handling data field names
-    def fieldname(self, role=None):
-        return self.via_name
-
-
-class _ResolvedFeature(object):
+class _ResolvedFeature(_FeatureAttrsMixin):
 
     def __init__(self, name, via=None, unit_type=None, kind=None, providers=[],
                  external=False, private=False, implicit=False):
-        self.name = name
-        self.via = via or None
-        self.unit_type = unit_type
-        self.kind = kind
+
+        _FeatureAttrsMixin.__init__(self, name=name, unit_type=unit_type, via=via, external=external, private=private, implicit=implicit, kind=kind)
         self.providers = providers
-        self.external = external
-        self.private = private
-        self.implicit = implicit
 
     @property
     def path(self):
@@ -200,51 +217,6 @@ class _ResolvedFeature(object):
             self._providers.update(providers)
         else:
             raise ValueError("Invalid provider specification.")
-
-    @property
-    def via_next(self):
-        if self.via is None:
-            return
-        s = self.via.split('/')
-        if len(s) > 0:
-            return s[0]
-
-    @property
-    def via_name(self):
-        if self.via is None:
-            return self.name
-        return '{}/{}'.format(self.via, self.name)
-
-    @property
-    def resolved_next(self):  # TODO: Make more consistent with Constraint API?
-        s = self.via.split('/')
-        if len(s) > 1:
-            return self.__class__(self.name, via='/'.join(s[1:]), providers=self.providers, external=self.external, private=self.private, implicit=self.implicit)
-        return self
-
-    @property
-    def as_external(self):
-        return self.__class__(self.name, via=self.via, providers=self.providers, external=True, private=self.private, implicit=self.implicit)
-
-    @property
-    def as_internal(self):
-        return self.__class__(self.name, via=self.via, providers=self.providers, external=False, private=self.private, implicit=self.implicit)
-
-    @property
-    def as_private(self):
-        return self.__class__(self.name, via=self.via, providers=self.providers, external=self.external, private=True, implicit=self.implicit)
-
-    @property
-    def as_public(self):
-        return self.__class__(self.name, via=self.via, providers=self.providers, external=self.external, private=False, implicit=self.implicit)
-
-    @property
-    def as_implicit(self):
-        return self.__class__(self.name, via=self.via, providers=self.providers, external=self.external, private=self.private, implicit=True)
-
-    @property
-    def as_explicit(self):
-        return self.__class__(self.name, via=self.via, providers=self.providers, external=self.external, private=self.private, implicit=False)
 
     def from_provider(self, provider):
         from .provider import MeasureProvider
@@ -319,6 +291,10 @@ class _StatisticalUnitIdentifier(_ProvidedFeature):
     @property
     def unit_type(self):
         return self.name
+
+    @unit_type.setter
+    def unit_type(self, unit_type):
+        pass
 
     @property
     def is_primary(self):
