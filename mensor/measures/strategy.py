@@ -30,6 +30,7 @@ class EvaluationStrategy(object):
 
         # Join parameters
         self.is_joined = False
+        self.join_is_compatible = True
         self.join_on_left = join_on_left
         self.join_on_right = join_on_right or [self.matched_unit_type.name]
         self.joins = joins or []
@@ -67,6 +68,16 @@ class EvaluationStrategy(object):
         else:
             return STRATEGY_TYPE.REGULAR
 
+    @property
+    def joins_all_compatible(self):
+        for join in self.joins:
+            if (
+                not self.provider._is_compatible_with(join.provider)
+                or not join.joins_all_compatible
+            ):
+                return False
+        return True
+
     def __repr__(self):
         class StrategyEncoder(json.JSONEncoder):
             def default(self, o):
@@ -80,16 +91,18 @@ class EvaluationStrategy(object):
                         d['strategy_type'] = o.strategy_type
                     if o.segment_by:
                         d['segment_by'] = o.segment_by
-                    # if o.where:
-                    d['where'] = o.where
+                    if o.where:
+                        d['where'] = o.where
                     if o.is_joined:
                         d['join_on_left'] = o.join_on_left
                         d['join_on_right'] = o.join_on_right
                         d['join_type'] = o.join_type
                         if o.join_prefix != o.unit_type.name:
                             d['join_prefix'] = o.join_prefix
+                        d['join_is_compatible'] = o.join_is_compatible
                     if o.joins:
                         d['joins'] = o.joins
+                        d['joins_all_compatible'] = o.joins_all_compatible
                     return d
                 return o.__repr__()
         return 'EvaluationStrategy(' + json.dumps(self, indent=4, cls=StrategyEncoder, ensure_ascii=False) + ')'
@@ -154,9 +167,12 @@ class EvaluationStrategy(object):
             )
         )
 
-        # Set joined flag
+        # Set join metadata on incoming strategy
         strategy.is_joined = True
-
+        strategy.join_is_compatible = (
+            self.provider._is_compatible_with(strategy.provider)
+            and strategy.joins_all_compatible
+        )
         if strategy.join_prefix == self.join_prefix:
             strategy.join_prefix = None
 
