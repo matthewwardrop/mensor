@@ -43,7 +43,7 @@ class SQLDialect(object):
         ) {{ join.name | col }}
         ON
         {%- for field in join.left_on %}
-            {% if loop.index0 > 0 %}AND {% endif %}{{ field_map[field] }} = {{ join.name | col }}.{{ join.right_on[loop.index0] | col }}
+            {% if loop.index0 > 0 %}AND {% endif %}{{ field_map['dimensions'][field] }} = {{ join.name | col }}.{{ join.right_on[loop.index0] | col }}
         {%- endfor -%}
         {%- endfor %}
         {%- endif %}
@@ -56,14 +56,6 @@ class SQLDialect(object):
             {% if loop.index > 1 %},{% endif %} {{ gb }}
         {%- endfor %}
         {%- endif %}
-    """).strip()
-
-    TEMPLATE_STATS = textwrap.dedent("""
-        SELECT
-
-        FROM (
-            {{ base_sql }}
-        )
     """).strip()
 
     TEMPLATE_TABLE = textwrap.dedent("""
@@ -89,12 +81,12 @@ class SQLDialect(object):
         return {
             CONSTRAINTS.AND: lambda w, f, m: '({})'.format(' AND '.join(m(f, o) for o in w.operands)),
             CONSTRAINTS.OR: lambda w, f, m: '({})'.format(' OR '.join(m(f, o) for o in w.operands)),
-            CONSTRAINTS.EQUALITY: lambda w, f, m: "{} = {}".format(f[w.field], ve(w.value)),
-            CONSTRAINTS.INEQUALITY_GT: lambda w, f, m: "{} > {}".format(f[w.field], ve(w.value)),
-            CONSTRAINTS.INEQUALITY_GTE: lambda w, f, m: "{} >= {}".format(f[w.field], ve(w.value)),
-            CONSTRAINTS.INEQUALITY_LT: lambda w, f, m: "{} < {}".format(f[w.field], ve(w.value)),
-            CONSTRAINTS.INEQUALITY_LTE: lambda w, f, m: "{} <= {}".format(f[w.field], ve(w.value)),
-            CONSTRAINTS.IN: lambda w, f, m: "{} IN ({})".format(f[w.field], ", ".join(ve(v) for v in w.value)),
+            CONSTRAINTS.EQUALITY: lambda w, f, m: "{} = {}".format(f['dimensions'][w.field], ve(w.value)),
+            CONSTRAINTS.INEQUALITY_GT: lambda w, f, m: "{} > {}".format(f['dimensions'][w.field], ve(w.value)),
+            CONSTRAINTS.INEQUALITY_GTE: lambda w, f, m: "{} >= {}".format(f['dimensions'][w.field], ve(w.value)),
+            CONSTRAINTS.INEQUALITY_LT: lambda w, f, m: "{} < {}".format(f['dimensions'][w.field], ve(w.value)),
+            CONSTRAINTS.INEQUALITY_LTE: lambda w, f, m: "{} <= {}".format(f['dimensions'][w.field], ve(w.value)),
+            CONSTRAINTS.IN: lambda w, f, m: "{} IN ({})".format(f['dimensions'][w.field], ", ".join(ve(v) for v in w.value)),
         }
 
     # SQL rendering helpers
@@ -170,7 +162,7 @@ class SQLMeasureProvider(MeasureProvider):
         assert db_client is not None, "Must specify an (Omniduct-compatible) database client."
 
         MeasureProvider.__init__(self, *args, **kwargs)
-        self._base_sql = sql
+        self._base_sql = textwrap.dedent(sql).strip() if sql else None
         self.db_client = db_client
         self.dialect = DIALECTS[dialect]
 
@@ -229,21 +221,21 @@ class SQLMeasureProvider(MeasureProvider):
         return self.dialect.value_encode(value)
 
     def _field_map(self, unit_type, measures, dimensions, joins):
-        field_map = {}
+        field_map = {'measures': {}, 'dimensions': {}}
 
         self_table_name = self._table_name(unit_type)
 
         for measure in measures:
             if not measure.external:
-                if measure.via_name in field_map:
+                if measure.via_name in field_map['measures']:
                     raise ValueError(measure.via_name)
-                field_map[measure.via_name] = self.dialect.source_column_encode(self_table_name, measure.expr, measure.default)
+                field_map['measures'][measure.via_name] = self.dialect.source_column_encode(self_table_name, measure.expr, measure.default)
 
         for dimension in dimensions:
             if not dimension.external:
-                if dimension.via_name in field_map:
+                if dimension.via_name in field_map['dimensions']:
                     raise ValueError(dimension.via_name )
-                field_map[dimension.via_name] = self.dialect.source_column_encode(self_table_name, dimension.expr, dimension.default)
+                field_map['dimensions'][dimension.via_name] = self.dialect.source_column_encode(self_table_name, dimension.expr, dimension.default)
 
         for join in joins:
             for measure in join.measures:
@@ -251,13 +243,13 @@ class SQLMeasureProvider(MeasureProvider):
                     map_name = measure.as_via(join.join_prefix).via_name
                 else:
                     map_name = '/'.join([join.name, measure.via_name])
-                field_map[map_name] = self.dialect.source_column_encode(join.name, measure.fieldname(role='measure'), measure.default)
+                field_map['measures'][map_name] = self.dialect.source_column_encode(join.name, measure.fieldname(role='measure'), measure.default)
             for dimension in join.dimensions:
                 if dimension.as_via(join.join_prefix) in dimensions and dimensions[dimension.as_via(join.join_prefix)].external:
                     map_name = dimension.as_via(join.join_prefix).via_name
                 else:
                     map_name = '/'.join([join.name, dimension.via_name])
-                field_map[map_name] = self.dialect.source_column_encode(join.name, dimension.fieldname(role='dimension'), dimension.default)
+                field_map['dimensions'][map_name] = self.dialect.source_column_encode(join.name, dimension.fieldname(role='dimension'), dimension.default)
 
         return field_map
 
@@ -267,7 +259,7 @@ class SQLMeasureProvider(MeasureProvider):
             if not dimension.private:
                 dims.append(
                     '{} AS {}'.format(
-                        field_map[dimension.via_name],
+                        field_map['dimensions'][dimension.via_name],
                         self._col(dimension.via_name)
                     )
                 )
@@ -284,7 +276,7 @@ class SQLMeasureProvider(MeasureProvider):
                     for fieldname, col_map in measure.get_fields(stats=stats, unit_agg=unit_agg).items():
                         aggs.append(
                             '{col_op} AS {f}'.format(
-                                col_op=col_map('1' if measure == 'count' else field_map[measure.via_name]),
+                                col_op=col_map('1' if measure == 'count' else field_map['measures'][measure.via_name]),
                                 f=self._col(fieldname),
                             )
                         )
@@ -292,7 +284,7 @@ class SQLMeasureProvider(MeasureProvider):
         return aggs
 
     def _get_groupby_sql(self, field_map, dimensions):
-        return [field_map[dimension.via_name] for dimension in dimensions if not dimension.private]
+        return [field_map['dimensions'][dimension.via_name] for dimension in dimensions if not dimension.private]
 
     def _get_where_sql(self, field_map, where):
         if where:
@@ -318,5 +310,6 @@ class SQLTableMeasureProvider(SQLMeasureProvider):
         return self._template_environment.get_template(self.dialect.TEMPLATE_TABLE).render(
             table=self.name,
             measures=[m for m in measures if m != 'count' and not m.external],
-            dimensions=[d for d in segment_by if not d.external],
+            dimensions=[d for d in segment_by if not d.external and d not in measures],
+        )
         )
