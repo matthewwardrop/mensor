@@ -68,13 +68,15 @@ class MeasureProvider(object):
     transparently across all `MeasureProvider`s, handling the joins as necessary.
     """
 
-    def __init__(self, name=None, *, identifiers=None, measures=None, dimensions=None):
+    def __init__(self, name=None, *, identifiers=None, measures=None, dimensions=None,
+                 provisions=None):
         # TODO: Support adding metadata like measure provider maintainer
         self.name = name
 
         self.identifiers = identifiers
         self.dimensions = dimensions
         self.measures = measures
+        self.provisions = provisions
 
     def _get_dimensions_from_specs(self, cls, specs):
         dims = AttrDict()
@@ -216,6 +218,38 @@ class MeasureProvider(object):
 
     def _unit_has_measure(self, unit_type, measure):
         return unit_type.is_unique
+
+    @property
+    def provisions(self):
+        return {
+            name: kwargs['source'].evaluate(
+                unit_type=kwargs['unit_type'],
+                measures=kwargs['measures'],
+                segment_by=kwargs['segment_by'],
+                where=kwargs['where'],
+                dry_run=True,
+                **kwargs['opts']
+            )
+            for name, kwargs in self._provisions.items()
+        }
+        return self._provisions
+
+    @provisions.setter
+    def provisions(self, provisions):
+        self._provisions = provisions or {}
+
+    def requires_provision(self, name, unit_type, measures=None, segment_by=None, where=None,
+                           source=None, **opts):
+        assert 'dry_run' not in opts, "Cannot hard specify 'dry_run' in provision options."
+        self._provisions[name] = {
+            'unit_type': unit_type,
+            'measures': measures,
+            'segment_by': segment_by,
+            'where': where,
+            'source': source,
+            'opts': opts
+        }
+        return self
 
     # Resolution
 
@@ -465,7 +499,7 @@ class MeasureProvider(object):
         MeasureProviders must in their _evaluate function (in logical order):
 
         - Extract the nominated measures and dimensions that are not marked 'external'
-          from their associated data store.
+          from their associated data store, including from any provisions.
         - Join in any compatible joins based on their intermediate representation, along
           with any fields from these joins marked as 'external' in the the appropriate
           dictionaries.

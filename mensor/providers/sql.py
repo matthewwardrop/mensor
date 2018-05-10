@@ -175,7 +175,13 @@ class SQLMeasureProvider(MeasureProvider):
         })
 
     def _sql(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
-        return self._base_sql
+        assert all(self._is_compatible_with(es.provider) and es.joins_all_compatible for es in self.provisions.values())
+        return self._template_environment.get_template(self._base_sql).render(
+            **{
+                name: es.execute(ir_only=True, stats=False)
+                for name, es in self.provisions.items()
+            }
+        )
 
     def _evaluate(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
         df = self.db_client.query(self.get_sql(

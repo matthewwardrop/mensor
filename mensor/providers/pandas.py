@@ -10,13 +10,20 @@ class PandasMeasureProvider(MeasureProvider):
     # with pandas dataframes, and so some of the functionality of this class is
     # exposed as classmethods for use externally.
 
-    def __init__(self, name, data=None, **kwargs):
+    def __init__(self, name, data=None, data_transform=None, **kwargs):
         MeasureProvider.__init__(self, name, **kwargs)
         if isinstance(data, str):
             data = pd.read_csv(data)
-        self.data = data
+        self._data = data
+        self._data_transform = data_transform
 
         self.add_measure('count', shared=True, distribution=None)
+
+    @property
+    def data(self):
+        if self._data_transform is None:
+            return self._data
+        return data_transform(self, self._data, self.provisions)
 
     def _evaluate(self, unit_type, measures, where=None, segment_by=None,
                   stats=True, covariates=False, **opts):
