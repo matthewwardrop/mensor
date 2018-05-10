@@ -295,7 +295,7 @@ class EvaluationStrategy(object):
             (
                 registry._resolve_dimension(unit_type, dimension).as_implicit
             )
-            for dimension in where.scoped.dimensions
+            for dimension in where.scoped_for_unit_type(unit_type).dimensions
             if dimension not in segment_by
         ]
 
@@ -343,7 +343,7 @@ class EvaluationStrategy(object):
 
         evaluations = []
         for provision in provisions:
-            generic_constraints = where.generic_for_provider(provision.provider, unit_type)
+            generic_constraints = where.generic_for_provider(provision.provider)
             generic_constraint_dimensions = [
                 provision.provider.resolve(dimension).as_private
                 for dimension in generic_constraints.dimensions

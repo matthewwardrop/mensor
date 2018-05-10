@@ -1,9 +1,10 @@
 import unittest
 
 from mensor.constraints import And, Constraint, Or
+from mensor.measures.provider import MeasureProvider
 
 
-class PandasMeasureProviderTests(unittest.TestCase):
+class ConstraintTests(unittest.TestCase):
 
     def test_constraint(self):
 
@@ -130,3 +131,12 @@ class PandasMeasureProviderTests(unittest.TestCase):
         self.assertEqual(c.generic, Constraint.from_spec({'b': 20}))
 
         self.assertRaises(ValueError, Constraint.from_spec, ({'*/b': 20}, {'c': 30}))
+
+    def test_strategy_methods(self):
+        c = Constraint.from_spec({'*/unit/a': 1, '*/b': 2, 'c': 3})
+
+        self.assertEqual(c.scoped_for_unit_type('unit'), Constraint.from_spec({'a': 1, 'c': 3}))
+        self.assertEqual(c.scoped_for_unit_type('other'), Constraint.from_spec({'c': 3}))
+
+        mp = MeasureProvider().provides_dimension('b')
+        self.assertEqual(c.generic_for_provider(mp), Constraint.from_spec({'b': 2}))

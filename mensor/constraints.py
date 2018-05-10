@@ -121,11 +121,14 @@ class BaseConstraint(metaclass=ABCMeta):
             applicable = []
         return And.from_operands(applicable)
 
-    def generic_for_provider(self, provider, unit_type):
+    def scoped_for_unit_type(self, unit_type):
+        return And.from_operands(self.scoped, self.generic.via_next(unit_type if isinstance(unit_type, str) else unit_type.name, include_generic=True))
+
+    def generic_for_provider(self, provider):
         if self.generic.kind is CONSTRAINTS.AND:
             generic_constraints = self.generic.operands[:]
         elif self.generic:
-            generic_constraints = [self]
+            generic_constraints = [self.generic]
         else:
             generic_constraints = []
 
@@ -139,8 +142,6 @@ class BaseConstraint(metaclass=ABCMeta):
         for constraint in generic_constraints:
             if len(set(constraint.dimensions).difference(provider_features)) == 0:
                 applicable.append(constraint)
-            elif len(set(constraint.via_next(unit_type.name, include_generic=True).dimensions).difference(provider_features)) == 0:
-                applicable.append(constraint.via_next(unit_type.name, include_generic=True))
 
         return And.from_operands(applicable)
 
@@ -242,6 +243,9 @@ class ContainerConstraint(BaseConstraint):
             return False
         for operand in self.operands:
             if operand not in other.operands:
+                return False
+        for operand in other.operands:
+            if operand not in self.operands:
                 return False
         return True
 
