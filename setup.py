@@ -13,7 +13,7 @@ setup(
     packages=find_packages(),
     install_requires=version_info['__dependencies__'],
     classifiers=[
-        'Development Status :: 1 - Planning',
+        'Development Status :: 3 - Alpha',
         'Environment :: Console',
         'Intended Audience :: Developers',
         'Intended Audience :: Information Technology',
