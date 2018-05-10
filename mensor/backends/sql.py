@@ -167,7 +167,7 @@ class SQLMeasureProvider(MeasureProvider):
         self.db_client = db_client
         self.dialect = DIALECTS[dialect]
 
-        self.add_measure('count', shared=True, distribution=None)
+        self.provides_measure('count', shared=True, distribution=None)
 
         self._template_environment = jinja2.Environment(loader=jinja2.FunctionLoader(lambda x: x))
         self._template_environment.filters.update({

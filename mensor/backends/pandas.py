@@ -17,7 +17,7 @@ class PandasMeasureProvider(MeasureProvider):
         self._data = data
         self._data_transform = data_transform
 
-        self.add_measure('count', shared=True, distribution=None)
+        self.provides_measure('count', shared=True, distribution=None)
 
     @property
     def data(self):

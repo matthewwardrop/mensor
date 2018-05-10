@@ -46,21 +46,21 @@ class MeasureProvider(object):
 
         Identifiers:
         - .identifiers
-        - .add_identifier
+        - .provides_identifier
         - .unit_types
         - .identifier_for_unit
         - .foreign_keys_for_unit
 
         Dimensions:
         - .dimensions
-        - .add_dimension
+        - .provides_dimension
         - .dimensions_for_unit
-        - .add_partition
+        - .provides_partition
         - .partitions_or_unit
 
         Measures:
         - .measures
-        - .add_measure
+        - .provides_measure
         - .measures_for_unit
 
     `MeasureProvider`s are registered into pools of `MeasureProvider`s called
@@ -108,7 +108,7 @@ class MeasureProvider(object):
     def identifiers(self, identifiers):
         self._identifiers = self._get_dimensions_from_specs(_StatisticalUnitIdentifier, identifiers)
 
-    def add_identifier(self, unit_type=None, expr=None, role='foreign', dummy=False):
+    def provides_identifier(self, unit_type=None, expr=None, role='foreign', dummy=False):
         identifier = _StatisticalUnitIdentifier(unit_type, expr=expr, role=role, dummy=dummy, provider=self)
         self._identifiers[identifier] = identifier
         return self
@@ -149,7 +149,7 @@ class MeasureProvider(object):
     def dimensions(self, dimensions):
         self._dimensions = self._get_dimensions_from_specs(_Dimension, dimensions)
 
-    def add_dimension(self, name=None, desc=None, expr=None, default=None, shared=False, requires_constraint=False):
+    def provides_dimension(self, name=None, desc=None, expr=None, default=None, shared=False, requires_constraint=False):
         dimension = _Dimension(name, desc=desc, expr=expr, default=default, shared=shared, requires_constraint=requires_constraint, provider=self)
         self._dimensions[dimension] = dimension
         return self
@@ -179,7 +179,7 @@ class MeasureProvider(object):
     # Note that partitions also appears as dimensions, since they are
     # functionally equivalent in most cases.
     # (partitions behave differently in joins TODO: document this difference)
-    def add_partition(self, name=None, desc=None, expr=None, requires_constraint=False):
+    def provides_partition(self, name=None, desc=None, expr=None, requires_constraint=False):
         dimension = _Dimension(name, desc=desc, expr=expr, shared=True, partition=True, requires_constraint=requires_constraint, provider=self)
         self._dimensions[dimension] = dimension
         return self
@@ -199,7 +199,7 @@ class MeasureProvider(object):
     def measures(self, measures):
         self._measures = self._get_dimensions_from_specs(_Measure, measures)
 
-    def add_measure(self, name=None, expr=None, default=None, desc=None, shared=False, unit_agg='sum', distribution='normal'):
+    def provides_measure(self, name=None, expr=None, default=None, desc=None, shared=False, unit_agg='sum', distribution='normal'):
         measure = _Measure(name, expr=expr, default=default, desc=desc, shared=shared, unit_agg=unit_agg, distribution=distribution, provider=self)
         assert measure.unit_agg in self._agg_methods, "This provider does not support aggregating at the unit level using '{}'.".format(measure.unit_agg)
         self._measures[measure] = measure
