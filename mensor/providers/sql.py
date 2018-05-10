@@ -6,6 +6,8 @@ import jinja2
 from mensor.measures.constraints import CONSTRAINTS
 from mensor.measures.provider import MeasureProvider
 from mensor.measures.types import AGG_METHODS
+from mensor.metrics.types import MetricImplementation
+
 
 # TODO: Consider using sqlalchemy to generate SQL
 # TODO: Consider creating an option to produce SQL using WITH clauses
@@ -318,4 +320,28 @@ class SQLTableMeasureProvider(SQLMeasureProvider):
             measures=[m for m in measures if m != 'count' and not m.external],
             dimensions=[d for d in segment_by if not d.external and d not in measures],
         )
+
+
+class SQLMetricImplementation(MetricImplementation):
+
+    def __init__(self, sql, post_stats=True):
+        self.sql = textwrap.dedent(sql) if sql else sql
+        self.post_stats = post_stats
+
+    def _is_compatible_with(self, strategy):
+        return isinstance(strategy.provider, SQLMeasureProvider) and strategy.joins_all_compatible
+
+    def evaluate(self, strategy, marginalise=None, ir_only=False, **opts):
+        ir = self.get_ir(strategy, marginalise=marginalise, **opts)
+        if ir_only:
+            return ir
+        return strategy.provider.db_client.query(ir)
+
+    def get_ir(self, strategy, marginalise=None, **opts):
+        return jinja2.Template(self.sql).render(
+            measures=[m for m in strategy.measures if not m.private],
+            segment_by=[d for d in strategy.segment_by if not d.private],
+            marginalise=marginalise or [],
+            provision=strategy.execute(ir_only=True, stats=self.post_stats),
+            **opts
         )
