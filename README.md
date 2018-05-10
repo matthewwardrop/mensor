@@ -26,3 +26,13 @@ Among other things, Mensor:
 - allows for local ad-hoc definitions of additional data sources for exploration
   by data scientists or other technically minded folk, decoupling it from
   deployment into production services.
+
+**Note:** Mensor is currently still under heavy development, and intrusive
+changes to the API are expected. To minimise the impact on downstream projects,
+Mensor will strictly adhere to semantic versioning. In particular, any
+incompatible or sufficiently adventurous change to classes expected to be used
+outside of Mensor itself will resulting a major version bump. If you pin the
+version of Mensor used in your project using `mensor>=x.y(.z)?<x.y+1`
+(e.g. `mensor>=0.1.2<0.2`), you should be protected from any code churn and can
+upgrade to newer versions of Mensor after reading the release notes at your
+leisure.
