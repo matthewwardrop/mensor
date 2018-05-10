@@ -242,7 +242,7 @@ class SQLMeasureProvider(MeasureProvider):
         for dimension in dimensions:
             if not dimension.external:
                 if dimension.via_name in field_map['dimensions']:
-                    raise ValueError(dimension.via_name )
+                    raise ValueError(dimension.via_name)
                 field_map['dimensions'][dimension.via_name] = self.dialect.source_column_encode(self_table_name, dimension.expr, dimension.default)
 
         for join in joins:

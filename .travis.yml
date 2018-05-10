@@ -10,7 +10,7 @@ install:
   - pip install tox-travis
 
 script:
-  - "pycodestyle --ignore=E501,E712,E722,W503,W601 ."
+  - "pycodestyle --ignore=E501,E712,E722,W503,W601 mensor tests"
   - "tox"
 
 # Deploy to pypi automatically from tagged releases on the stable branch
