@@ -3,9 +3,9 @@ import itertools
 import pandas as pd
 import six
 
+from mensor.constraints import CONSTRAINTS, And, Constraint
 from mensor.utils import AttrDict
 
-from .constraints import CONSTRAINTS, And, Constraint
 from .types import (AGG_METHODS, Join, MeasureDataFrame, MeasureSeries,
                     _Dimension, _Measure, _StatisticalUnitIdentifier)
 
@@ -337,7 +337,7 @@ class MeasureProvider(object):
         Returns:
             MeasureDataFrame: A dataframe of the results of the computation.
         """
-        from mensor.providers.pandas import PandasMeasureProvider  # We need this for some pandas transformations
+        from mensor.backends.pandas import PandasMeasureProvider  # We need this for some pandas transformations
 
         # Split joins into compatible and incompatible joins; 'joins_pre' and
         # 'joins_post' (so-called because compatible joins occur before any

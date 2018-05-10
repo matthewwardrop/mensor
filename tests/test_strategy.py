@@ -1,10 +1,10 @@
 import os
 import unittest
 
-from mensor.measures.constraints import BaseConstraint, Constraint
+from mensor.constraints import BaseConstraint, Constraint
 from mensor.measures.registry import MeasureRegistry
 from mensor.measures.strategy import STRATEGY_TYPE
-from mensor.providers.pandas import PandasMeasureProvider
+from mensor.backends.pandas import PandasMeasureProvider
 
 
 class EvaluationStrategyTests(unittest.TestCase):

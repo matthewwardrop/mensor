@@ -3,11 +3,10 @@ import textwrap
 
 import jinja2
 
-from mensor.measures.constraints import CONSTRAINTS
+from mensor.constraints import CONSTRAINTS
 from mensor.measures.provider import MeasureProvider
 from mensor.measures.types import AGG_METHODS
 from mensor.metrics.types import MetricImplementation
-
 
 # TODO: Consider using sqlalchemy to generate SQL
 # TODO: Consider creating an option to produce SQL using WITH clauses

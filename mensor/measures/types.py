@@ -396,7 +396,7 @@ class _Measure(_ProvidedFeature):
         """
         assert not (unit_agg and stats)
         if for_pandas:
-            from mensor.providers.pandas import PandasMeasureProvider
+            from mensor.backends.pandas import PandasMeasureProvider
             provider = PandasMeasureProvider
         else:
             provider = self.provider

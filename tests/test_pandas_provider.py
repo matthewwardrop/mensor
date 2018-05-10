@@ -2,7 +2,7 @@ import os
 import unittest
 
 from mensor.measures.registry import MeasureRegistry
-from mensor.providers.pandas import PandasMeasureProvider
+from mensor.backends.pandas import PandasMeasureProvider
 
 
 class PandasMeasureProviderTests(unittest.TestCase):

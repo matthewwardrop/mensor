@@ -47,7 +47,7 @@ up configuration from YAML files, but we defer such consideration to the
 
     import os
     from mensor.measures.registry import MeasureRegistry
-    from mensor.providers.pandas import PandasMeasureProvider
+    from mensor.backends.pandas import PandasMeasureProvider
 
     registry = MeasureRegistry()
 

@@ -2,7 +2,8 @@ import json
 from collections import OrderedDict
 from enum import Enum
 
-from .constraints import And, Constraint
+from mensor.constraints import And, Constraint
+
 from .types import DimensionBundle, Join, _StatisticalUnitIdentifier
 
 

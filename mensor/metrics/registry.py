@@ -1,6 +1,6 @@
 import pandas as pd
 
-from mensor.measures.constraints import Constraint
+from mensor.constraints import Constraint
 from mensor.measures.registry import MeasureRegistry
 from mensor.measures.types import MeasureDataFrame, MeasureSeries
 
