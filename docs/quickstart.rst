@@ -51,7 +51,7 @@ up configuration from YAML files, but we defer such consideration to the
 
     registry = MeasureRegistry()
 
-    data_dir = "<path to checked out mesnor repository>/tests/data"
+    data_dir = "<path to checked out Mensor repository>/tests/data"
 
     people = (
         PandasMeasureProvider(
