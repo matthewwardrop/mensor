@@ -98,10 +98,10 @@ class EvaluationStrategyTests(unittest.TestCase):
 
         self.assertIn('age', es.measures)
         self.assertIn('geography', es.segment_by)
-        # self.assertFalse(es.segment_by['geography'].private)
-        # self.assertTrue(es.segment_by['geography'].external)
+        self.assertFalse(es.segment_by['geography'].private)
+        self.assertTrue(es.segment_by['geography'].external)
         self.assertIn('person:seller', es.segment_by)
-        # self.assertTrue(es.segment_by['person'].private)
+        self.assertTrue(es.segment_by['person:seller'].private)
         self.assertIn('ds', es.segment_by)
 
         self.assertEqual(es.joins[0].provider.name, 'people2')
@@ -122,19 +122,18 @@ class EvaluationStrategyTests(unittest.TestCase):
         es = self.registry.evaluate('transaction', measures=['person:seller/age'], segment_by=['person:buyer/name'],
                                     where={'*/ds': '2018-01-01'}, dry_run=True)
 
-        # TODO: uncomment privacy when strategy updated to use dictionaries
-
         # Top-level strategy check
         self.assertIn('person:seller/age', es.measures)
-        # self.assertFalse(es.measures['person:seller/age'].private)
+        self.assertFalse(es.measures['person:seller/age'].private)
         self.assertIn('person:buyer/name', es.segment_by)
-        # self.assertFalse(es.segment_by['person:buyer/age'].private)
+        self.assertTrue(es.segment_by['person:buyer/name'].external)
+        self.assertFalse(es.segment_by['person:buyer/name'].private)
         self.assertIn('person:seller', es.segment_by)
-        # self.assertTrue(es.segment_by['person:seller/person'].private)
+        self.assertTrue(es.segment_by['person:seller'].private)
         self.assertIn('person:buyer', es.segment_by)
-        # self.assertTrue(es.segment_by['person:buyer/person'].private)
+        self.assertTrue(es.segment_by['person:buyer'].private)
         self.assertIn('ds', es.segment_by)
-        # self.assertTrue(es.segment_by['person:buyer/ds'].private)
+        self.assertTrue(es.segment_by['ds'].private)
 
         # Joins check
         self.assertEqual(len(es.joins), 2)
@@ -153,15 +152,13 @@ class EvaluationStrategyTests(unittest.TestCase):
         es = self.registry.evaluate('person:seller', measures=['transaction/value'], segment_by=['name', 'person:seller'],
                                     where={'*/ds': '2018-01-01'}, dry_run=True)
 
-        # TODO: uncomment privacy when strategy updated to use dictionaries
-
         self.assertIn('transaction/value', es.measures)
-        # self.assertFalse(es.segment_by['transaction/value'].private)
-        # self.assertTrue(es.segment_by['transaction/value'].external)
+        self.assertFalse(es.measures['transaction/value'].private)
+        self.assertTrue(es.measures['transaction/value'].external)
         self.assertIn('name', es.segment_by)
-        # self.assertFalse(es.segment_by['name'].private)
+        self.assertFalse(es.segment_by['name'].private)
         self.assertIn('person:seller', es.segment_by)
-        # self.assertFalse(es.segment_by['person'].private)
+        self.assertFalse(es.segment_by['person:seller'].private)
 
         # Join information
         rjoin = es.joins[0]
@@ -183,6 +180,6 @@ class EvaluationStrategyTests(unittest.TestCase):
 
         self.assertIn('person:seller', es.segment_by)
 
-        person_dimension = es.segment_by[es.segment_by.index('person:seller')]
+        person_dimension = es.segment_by['person:seller']
         self.assertEqual(person_dimension.alias, 'person:seller')
         self.assertEqual(person_dimension.name, 'person')

@@ -1,10 +1,9 @@
 import itertools
 
 import pandas as pd
-import six
 
 from mensor.constraints import CONSTRAINTS, And, Constraint
-from mensor.utils import AttrDict
+from mensor.utils import AttrDict, SequenceMap
 
 from .types import (AGG_METHODS, Join, MeasureDataFrame, MeasureEvaluator,
                     MeasureSeries, _Dimension, _Measure,
@@ -80,7 +79,7 @@ class MeasureProvider(MeasureEvaluator):
         self.provisions = provisions
 
     def _get_dimensions_from_specs(self, cls, specs):
-        dims = AttrDict()
+        dims = SequenceMap()
         if specs is None:
             return dims
         for spec in specs:
@@ -111,7 +110,7 @@ class MeasureProvider(MeasureEvaluator):
 
     def provides_identifier(self, unit_type=None, expr=None, role='foreign', dummy=False):
         identifier = _StatisticalUnitIdentifier(unit_type, expr=expr, role=role, dummy=dummy, provider=self)
-        self._identifiers[identifier] = identifier
+        self._identifiers.append(identifier)
         return self
 
     @property
@@ -135,12 +134,12 @@ class MeasureProvider(MeasureEvaluator):
             return self.identifiers
         unit_type = self.identifier_for_unit(unit_type)
 
-        foreign_keys = {}
+        foreign_keys = SequenceMap()
         for foreign_key in self.identifiers:
             if self._unit_has_foreign_key(unit_type, foreign_key):
                 if unit_type.name == foreign_key:
                     foreign_key = foreign_key.with_alias(unit_type.alias)
-                foreign_keys[foreign_key] = foreign_key
+                foreign_keys.append(foreign_key)
         return foreign_keys
 
     def reverse_foreign_keys_for_unit(self, unit_type=None):
@@ -161,7 +160,7 @@ class MeasureProvider(MeasureEvaluator):
 
     def provides_dimension(self, name=None, desc=None, expr=None, default=None, shared=False, requires_constraint=False):
         dimension = _Dimension(name, desc=desc, expr=expr, default=default, shared=shared, requires_constraint=requires_constraint, provider=self)
-        self._dimensions[dimension] = dimension
+        self._dimensions.append(dimension)
         return self
 
     def dimensions_for_unit(self, unit_type=None, include_partitions=True):
@@ -169,13 +168,13 @@ class MeasureProvider(MeasureEvaluator):
             return self.dimensions
         unit_type = self.identifier_for_unit(unit_type)
 
-        dimensions = {}
+        dimensions = SequenceMap()
         for dimension in self.dimensions:
             if (
                 self._unit_has_dimension(unit_type, dimension)
                 and (include_partitions or not dimension.partition)
             ):
-                dimensions[dimension] = dimension
+                dimensions.append(dimension)
         return dimensions
 
     def _unit_has_dimension(self, unit_type, dimension):
@@ -191,7 +190,7 @@ class MeasureProvider(MeasureEvaluator):
     # (partitions behave differently in joins TODO: document this difference)
     def provides_partition(self, name=None, desc=None, expr=None, requires_constraint=False):
         dimension = _Dimension(name, desc=desc, expr=expr, shared=True, partition=True, requires_constraint=requires_constraint, provider=self)
-        self._dimensions[dimension] = dimension
+        self._dimensions.append(dimension)
         return self
 
     def partitions_for_unit(self, unit_type=None):
@@ -212,7 +211,7 @@ class MeasureProvider(MeasureEvaluator):
     def provides_measure(self, name=None, expr=None, default=None, desc=None, shared=False, unit_agg='sum', distribution='normal'):
         measure = _Measure(name, expr=expr, default=default, desc=desc, shared=shared, unit_agg=unit_agg, distribution=distribution, provider=self)
         assert measure.unit_agg in self._agg_methods, "This provider does not support aggregating at the unit level using '{}'.".format(measure.unit_agg)
-        self._measures[measure] = measure
+        self._measures.append(measure)
         return self
 
     def measures_for_unit(self, unit_type=None):
@@ -220,10 +219,10 @@ class MeasureProvider(MeasureEvaluator):
             return self.measures
         unit_type = self.identifier_for_unit(unit_type)
 
-        measures = {}
+        measures = SequenceMap()
         for measure in self.measures:
             if self._unit_has_measure(unit_type, measure):
-                measures[measure] = measure
+                measures.append(measure)
         return measures
 
     def _unit_has_measure(self, unit_type, measure):

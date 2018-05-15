@@ -3,6 +3,7 @@ from collections import OrderedDict
 from enum import Enum
 
 from mensor.constraints import And, Constraint
+from mensor.utils import SequenceMap
 
 from .types import DimensionBundle, Join, _StatisticalUnitIdentifier
 
@@ -24,9 +25,8 @@ class EvaluationStrategy(object):
         self.unit_type = unit_type
 
         # Anticipated measures, segmentations and constraints
-        # TODO: Use dictionaries to improve lookup performance
-        self.measures = measures or []
-        self.segment_by = segment_by or []
+        self.measures = SequenceMap(measures or [])
+        self.segment_by = SequenceMap(segment_by or [])
         self.where = where
 
         # Join parameters
@@ -116,11 +116,11 @@ class EvaluationStrategy(object):
         self_unit_type = self.provider.identifier_for_unit(unit_type.name).with_alias(unit_type.name)
         join_unit_type = strategy.provider.identifier_for_unit(unit_type.name)
         if self_unit_type not in self.segment_by:
-            self.segment_by.insert(0, self_unit_type.as_private)
+            self.segment_by.prepend(self_unit_type.as_private)
         if join_unit_type not in strategy.segment_by:
-            strategy.segment_by.insert(0, join_unit_type)
+            strategy.segment_by.prepend(join_unit_type)
         else:
-            strategy.segment_by[strategy.segment_by.index(join_unit_type)].private = False
+            strategy.segment_by[join_unit_type].private = False
 
         strategy.join_on_left = [self_unit_type.fieldname(role='dimension')]
         strategy.join_on_right = [join_unit_type.fieldname(role='dimension')]
@@ -137,7 +137,7 @@ class EvaluationStrategy(object):
             if partition not in strategy.segment_by:
                 strategy.segment_by.append(strategy.provider.resolve(strategy.unit_type, partition, role='dimension'))
             else:
-                strategy.segment_by[strategy.segment_by.index(partition)].private = False
+                strategy.segment_by[partition].private = False
             strategy.join_on_left.extend([p.fieldname(role='dimension') for p in common_partitions])
             strategy.join_on_right.extend([p.fieldname(role='dimension') for p in common_partitions])
 
@@ -392,8 +392,7 @@ class EvaluationStrategy(object):
 
         for dimension in strategy.segment_by:
             if dimension.implicit and dimension in where.scoped_applicable.dimensions:
-                index = strategy.segment_by.index(dimension)
-                strategy.segment_by[index] = strategy.segment_by[index].as_private
+                strategy.segment_by[dimension] = strategy.segment_by[dimension].as_private
 
         # Step 5: Return EvaluationStrategy, and profit.
 

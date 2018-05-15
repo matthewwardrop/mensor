@@ -1,6 +1,6 @@
 from collections import Counter
 
-from ..utils import nested_dict_copy
+from ..utils import nested_dict_copy, SequenceMap
 from .strategy import EvaluationStrategy
 from .types import (MeasureEvaluator, Provision, _ProvidedFeature,
                     _ResolvedFeature)
@@ -157,17 +157,18 @@ class MeasureRegistry(MeasureEvaluator):
         unit_type = self.identifier_for_unit(unit_type)
         feature_source = getattr(self._cache, kind + 's')
 
-        dims = {}
+        features = SequenceMap()
         for avail_unit_type in feature_source:
             if avail_unit_type.matches(unit_type):
                 for feature, instances in feature_source[avail_unit_type].items():
-                    if feature not in dims and (not attr_filter or attr_filter(feature)):
+                    if feature not in features and (not attr_filter or attr_filter(feature)):
                         alias = None
                         if kind in ('foreign_key', 'reverse_foreign_key') and avail_unit_type == feature.name:
                             alias = unit_type.name
-                        rf = _ResolvedFeature(feature.name, providers=[d.provider for d in instances], unit_type=unit_type, alias=alias, kind=kind)
-                        dims.update({rf: rf})
-        return dims
+                        features.append(
+                            _ResolvedFeature(feature.name, providers=[d.provider for d in instances], unit_type=unit_type, alias=alias, kind=kind)
+                        )
+        return features
 
     def foreign_keys_for_unit(self, unit_type):
         return self._features_lookup(unit_type, 'foreign_key')
@@ -275,12 +276,9 @@ class MeasureRegistry(MeasureEvaluator):
         provisions = []
         dimension_count = len(measures) + len(dimensions)
 
-        print(measures, dimensions)
         while dimension_count > 0:
             p = get_next_provider(unit_type, measures, dimensions, primary=True if require_primary and len(provisions) == 0 else False)
             join_prefix = unit_type.name
-
-            print(p.measures_for_unit(unit_type), p.dimensions_for_unit(unit_type))
 
             provisions.append(Provision(
                 p,
