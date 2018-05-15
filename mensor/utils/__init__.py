@@ -100,5 +100,8 @@ class SequenceMap(object):
     def __reversed__(self):
         return self.__values.__reversed__()
 
+    def __len__(self):
+        return len(self.__values)
+
     def __repr__(self):
         return '{{{}}}'.format(', '.join([v.__repr__() for v in self]))
