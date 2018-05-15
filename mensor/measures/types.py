@@ -1,5 +1,6 @@
 import copy
 import re
+from abc import ABCMeta, abstractmethod
 from collections import OrderedDict, namedtuple
 from enum import Enum
 
@@ -13,6 +14,91 @@ from uncertainties.unumpy import uarray
 from mensor.utils import startseq_match
 
 __all__ = ['Join', '_Dimension', '_StatisticalUnitIdentifier', '_Measure', 'MeasureDataFrame']
+
+
+class MeasureEvaluator(metaclass=ABCMeta):
+
+    @abstractmethod
+    def identifier_for_unit(self, unit_type):
+        raise NotImplementedError
+
+    @abstractmethod
+    def foreign_keys_for_unit(self, unit_type):
+        raise NotImplementedError
+
+    @abstractmethod
+    def reverse_foreign_keys_for_unit(self, unit_type):
+        raise NotImplementedError
+
+    @abstractmethod
+    def dimensions_for_unit(self, unit_type, include_partitions=True):
+        raise NotImplementedError
+
+    @abstractmethod
+    def partitions_for_unit(self, unit_type):
+        raise NotImplementedError
+
+    @abstractmethod
+    def measures_for_unit(self, unit_type):
+        raise NotImplementedError
+
+    # Resolution
+
+    def resolve(self, unit_type, features, role=None):
+        """
+        This method resolves one or more features optionally associated with a
+        unit_type and a role. Note that this method is concerned about
+        *functional* resolution, so if `role='dimension'` both identifiers and
+        measures will be resolved, since they can be used as dimensions.
+
+        Parameters:
+            names (str, list<str>): A name or list of names to resolve.
+            unit_type (str, None): A unit type for which the resolution should
+                be done.
+            role (str, None): One of 'measure', 'dimension', 'identifier' or `None`.
+
+        Returns:
+            _Dimension, _Measure, _StatisticalUnitIdentifier: The resolved object.
+        """
+
+        if isinstance(features, dict):
+            features = list(features)
+        if not isinstance(features, list):
+            return self._resolve(unit_type=unit_type, feature=features, role=role)
+
+        unresolvable = []
+        resolved = {}
+        for feature in features:
+            try:
+                r = self._resolve(unit_type=unit_type, feature=feature, role=role)
+                resolved[r] = r
+            except ValueError:
+                unresolvable.append(feature)
+        if len(unresolvable):
+            raise RuntimeError("Could not resolve {}(s) associated with unit_type '{}' for: '{}'".format(role or 'feature', unit_type.__repr__(), "', '".join(str(dim) for dim in unresolvable)))
+        return resolved
+
+    def _resolve(self, unit_type, feature, role=None):
+        if not isinstance(feature, six.string_types):
+            return feature
+        if role in (None, 'identifier', 'dimension', 'foreign_key'):
+            if feature in self.foreign_keys_for_unit(unit_type):
+                return self.foreign_keys_for_unit(unit_type)[feature]
+        if role in (None, 'reverse_foreign_key'):
+            if feature in self.reverse_foreign_keys_for_unit(unit_type):
+                return self.reverse_foreign_keys_for_unit(unit_type)[feature]
+        if role in (None, 'dimension') and feature in self.dimensions_for_unit(unit_type):
+            return self.dimensions_for_unit(unit_type)[feature]
+        if role in (None, 'dimension', 'measure') and feature in self.measures_for_unit(unit_type):
+            return self.measures_for_unit(unit_type)[feature]
+        raise ValueError("No such {} for unit type {} named: {}.".format(role or 'feature', unit_type, feature))
+
+    # Evaluation
+
+    @abstractmethod
+    def evaluate(self, unit_type, measures=None, segment_by=None, where=None,
+                 joins=None, stats=True, covariates=False, **opts):
+        raise NotImplementedError
 
 
 class Join(object):
@@ -53,7 +139,7 @@ class _FeatureAttrsMixin(object):
         self.external = external
         self.private = private
         self.implicit = implicit
-        self.via = via or None
+        self.via = via
         self.kind = kind
         self.alias = alias
 
@@ -89,6 +175,16 @@ class _FeatureAttrsMixin(object):
         self._name = name
 
     @property
+    def alias(self):
+        return self._alias or self.name
+
+    @alias.setter
+    def alias(self, alias):
+        if alias is not None and not re.match(r'^(?![0-9])[\w_:]+$', alias):
+            raise ValueError("Invalid feature alias '{}'. All aliases must consist only of word characters, numbers, underscores and colons, and cannot start with a number.".format(name))
+        self._alias = alias
+
+    @property
     def as_external(self):
         return self._with_attrs(external=True)
 
@@ -115,13 +211,21 @@ class _FeatureAttrsMixin(object):
     def with_alias(self, alias):
         return self._with_attrs(alias=alias or None)
 
+    @property
+    def via(self):
+        return self._via
+
+    @via.setter
+    def via(self, via):
+        self._via = via or None
+
     def as_via(self, *vias):
         vias = [via.name if isinstance(via, _ProvidedFeature) else via for via in vias]
         # In the case that we are adding a single via, there cannot be two identical components
         # in a row (patterns can repeat in some instances). To simplify code
         # elsewhere, we suppress via in the case that len(vias) == 1 and the provided
         # via is alrady in the via path.
-        current_vias = self.via.split('/') if self.via is not None else []
+        current_vias = self.via.split('/') if self.via else []
         if len(vias) == 1 and (not vias[0] or len(current_vias) > 0 and vias[0] == current_vias[-1]):
             return self
         return self._with_attrs(via='/'.join(vias + current_vias))
@@ -149,15 +253,11 @@ class _FeatureAttrsMixin(object):
     @property
     def via_name(self):
         if self.via:
-            return '{}/{}'.format(self.via, self.name)
-        return self.name
+            return '{}/{}'.format(self.via, self.alias)
+        return self.alias
 
     # Methods to assist MeasureProviders with handling data field names
     def fieldname(self, role=None):
-        if self.alias:
-            if self.via:
-                return '{}/{}'.format(self.via, self.alias)
-            return self.alias
         return self.via_name
 
     def __lt__(self, other):  # TODO: Where is this used?
@@ -170,7 +270,7 @@ class _FeatureAttrsMixin(object):
                 attrs.append(attr[0])
         return (
             self.via_name
-            + ('[{}]'.format(self.alias) if self.alias else '')
+            + ('[{}]'.format(self.name) if self.alias != self.name else '')
             + ('({})'.format(','.join(attrs)) if attrs else '')
         )
 
@@ -203,11 +303,11 @@ class _ProvidedFeature(_FeatureAttrsMixin):
 
     def __eq__(self, other):
         if isinstance(other, self.__class__):
-            if other.name == self.name and other.via == self.via:
+            if other.via_name == self.via_name:
                 return True
             return False
         elif isinstance(other, six.string_types):
-            if self.name == other or self.via_name == other:
+            if self.via_name == other:
                 return True
             return False
         else:
@@ -250,12 +350,12 @@ class _ResolvedFeature(_FeatureAttrsMixin):
         from .provider import MeasureProvider
         if not isinstance(provider, MeasureProvider):
             provider = self.providers[provider]
-        return provider.resolve(self.name)._with_attrs(**self.attrs)
+        return provider.resolve(self.unit_type, features=self.alias)._with_attrs(**self.attrs)
 
     def __repr__(self):
         return (
             "Resolved([{}/]{}, {})".format(
-                self.unit_type.name if self.unit_type else '*',
+                (self.unit_type if isinstance(self.unit_type, str) else self.unit_type.alias) if self.unit_type else '*',
                 _FeatureAttrsMixin.__repr__(self),
                 len(self.providers),
             )
@@ -265,15 +365,9 @@ class _ResolvedFeature(_FeatureAttrsMixin):
         return hash(self.via_name)
 
     def __eq__(self, other):
-        if isinstance(other, _ResolvedFeature):
-            if other.name == self.name and other.via == self.via:
+        if isinstance(other, (_ResolvedFeature, _ProvidedFeature)):
+            if other.via_name == self.via_name:
                 return True
-        elif isinstance(other, _ProvidedFeature):
-            try:
-                if other.name == self.name and other.provider.resolve(self.name):  # TODO: Sort out the difference btween Resolved and Provided features
-                    return True
-            except ValueError:
-                pass
         elif isinstance(other, six.string_types):
             if self.via_name == other:
                 return True
@@ -359,7 +453,7 @@ class _StatisticalUnitIdentifier(_ProvidedFeature):
         if isinstance(unit_type, _StatisticalUnitIdentifier):
             unit_type = unit_type.name
         elif isinstance(unit_type, _ResolvedFeature):
-            assert unit_type.kind in ('foreign_key', 'reverse_foreign_key')
+            assert unit_type.kind in ('identifier', 'foreign_key', 'reverse_foreign_key'), "{} (of type {}) is not a valid unit type.".format(unit_type, type(unit_type))
             unit_type = unit_type.name
         if reverse:
             return startseq_match(unit_type.split(':'), self.name.split(':'))

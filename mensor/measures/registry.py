@@ -2,12 +2,13 @@ from collections import Counter
 
 from ..utils import nested_dict_copy
 from .strategy import EvaluationStrategy
-from .types import Provision, _ProvidedFeature, _ResolvedFeature
+from .types import (MeasureEvaluator, Provision, _ProvidedFeature,
+                    _ResolvedFeature)
 
 __all__ = ['MeasureRegistry']
 
 
-class MeasureRegistry(object):
+class MeasureRegistry(MeasureEvaluator):
     """
     A `MeasureRegistry` instance is a wrapper around a pool of `MeasureProvider`
     instances that generates a graph of relationships between all of the
@@ -110,6 +111,8 @@ class MeasureRegistry(object):
                 raise RuntimeError("Attempted to add duplicate non-shared feature '{}'.".format(value))
             store.append(value)
 
+    # Initialisation methods
+
     def __init__(self):
         self._providers = {}
         self._cache = MeasureRegistry.GraphCache()
@@ -143,77 +146,54 @@ class MeasureRegistry(object):
     def unit_types(self):
         return set(self._cache.identifiers.keys())
 
-    def dimensions_for_unit(self, unit_type, include_partitions=True):
-        dims = set()
-        for avail_unit_type in self._cache.dimensions:
-            if avail_unit_type.matches(unit_type):
-                dims.update([v[0] for v in self._cache.dimensions[avail_unit_type].values() if include_partitions or not v[0].partition])
-        return dims
+    # MeasureEvaluator methods
 
-    def partitions_for_unit(self, unit_type):
-        dims = set()
-        for avail_unit_type in self._cache.dimensions:
-            if avail_unit_type.matches(unit_type):
-                dims.update([v[0] for v in self._cache.dimensions[avail_unit_type].values() if v[0].partition])
-        return dims
+    def identifier_for_unit(self, unit_type):
+        return self._cache.identifiers[unit_type][0]
 
-    def measures_for_unit(self, unit_type):
-        ms = set()
-        for avail_unit_type in self._cache.measures:
-            if avail_unit_type.matches(unit_type):
-                ms.update([v[0] for v in self._cache.measures[avail_unit_type].values()])
-        return ms
-
-    def foreign_keys_for_unit(self, unit_type):
-        fks = set()
-        for avail_unit_type in self._cache.foreign_keys:
-            if avail_unit_type.matches(unit_type):
-                fks.update([v[0] for v in self._cache.foreign_keys[avail_unit_type].values()])
-        return fks
-
-    def reverse_foreign_keys_for_unit(self, unit_type):
-        fks = set()
-        for avail_unit_type in self._cache.reverse_foreign_keys:
-            if avail_unit_type.matches(unit_type):
-                fks.update([v[0] for v in self._cache.reverse_foreign_keys[avail_unit_type].values()])
-        return fks
-
-    def _resolve_identifier(self, unit_type):
-        return self._cache.identifiers[unit_type][0]  # TODO: Use below mechanism?
-
-    def __resolve_feature(self, unit_type, feature, kind='dimension', feature_index=None):
-        """
-        This is an internal method that traverses the `GraphCache` in order to
-        resolve a particular feature (measure/dimension/identifier) for a specified
-        unit_type. Note that if `dimension` is a string representation graph
-        traversal (e.g. "transaction/person:seller/age") then the full graph
-        traversal is not verified, only the last step from e.g. "person:seller"
-        to "age", and the remainder of the path is appended to the 'via'
-        attribute.
-
-        Parameters:
-            unit_type (str, _StatisticalUnitIdentifier): The unit type for which
-                to resolve a nominated feature.
-            feature (str, _ProvidedFeature): The feature to resolved. Note that
-                features must be directly related to the unit_type.
-            kind (str): The kind of feature to resolve (one of: 'dimension',
-                'measure', 'foreign_key' or 'reverse_foreign_key')
-            feature_index (dict): Override for standard kind-detected cache
-                index.
-
-        Returns:
-            _ResolvedFeature: The resolved feature, with information about
-                provider and required joins.
-        """
-        # TODO: Actually apply checks.
+    def _features_lookup(self, unit_type, kind, attr_filter=None):
         assert kind in ('foreign_key', 'reverse_foreign_key', 'dimension', 'measure')
 
-        unit_type = self._resolve_identifier(unit_type)
-        feature_index = feature_index or getattr(self._cache, kind + 's', {})
-        via = ''
-        features = None
+        unit_type = self.identifier_for_unit(unit_type)
+        feature_source = getattr(self._cache, kind + 's')
 
-        attrs = {'kind': kind}
+        dims = {}
+        for avail_unit_type in feature_source:
+            if avail_unit_type.matches(unit_type):
+                for feature, instances in feature_source[avail_unit_type].items():
+                    if feature not in dims and (not attr_filter or attr_filter(feature)):
+                        alias = None
+                        if kind in ('foreign_key', 'reverse_foreign_key') and avail_unit_type == feature.name:
+                            alias = unit_type.name
+                        rf = _ResolvedFeature(feature.name, providers=[d.provider for d in instances], unit_type=unit_type, alias=alias, kind=kind)
+                        dims.update({rf: rf})
+        return dims
+
+    def foreign_keys_for_unit(self, unit_type):
+        return self._features_lookup(unit_type, 'foreign_key')
+
+    def reverse_foreign_keys_for_unit(self, unit_type):
+        return self._features_lookup(unit_type, 'reverse_foreign_key')
+
+    def dimensions_for_unit(self, unit_type, include_partitions=True):
+        return self._features_lookup(
+            unit_type, 'dimension',
+            attr_filter=None if include_partitions else lambda feature: not feature.partition
+        )
+
+    def partitions_for_unit(self, unit_type):
+        return self._features_lookup(
+            unit_type, 'dimension',
+            attr_filter=lambda feature: feature.partition
+        )
+
+    def measures_for_unit(self, unit_type):
+        return self._features_lookup(unit_type, 'measure')
+
+    def _resolve(self, unit_type, feature, role=None):
+        unit_type = self.identifier_for_unit(unit_type)
+        via = ''
+        attrs = {}
 
         if isinstance(feature, (_ResolvedFeature, _ProvidedFeature)):
             attrs = feature.attrs
@@ -229,59 +209,11 @@ class MeasureRegistry(object):
             feature = s[-1]
             eff_unit_type = unit_type
             if via_suffix:
-                eff_unit_type = self._resolve_identifier(s[-2])
+                eff_unit_type = self.identifier_for_unit(s[-2])
                 via += ('/' + via_suffix) if via else via_suffix
-            attrs['via'] = via
+            attrs['unit_type'] = unit_type
 
-            # Look for feature starting from most specific unit key with specificity
-            # less than or equal to provided unit_type. Unit_type name length
-            # is a good proxy for this.
-            for avail_unit_type in sorted(feature_index, key=lambda x: len(x.name), reverse=True):
-                if kind in ('foreign_key', 'reverse_foreign_key'):  # Handle self-lookup of hierarchical types. TODO: Do this more intelligently
-                    if avail_unit_type.matches(eff_unit_type):
-                        for feature_candidate in sorted(feature_index[avail_unit_type], key=lambda x: len(x.name), reverse=True):
-                            if feature_candidate.matches(feature):
-                                features = feature_index[avail_unit_type][feature_candidate]
-                                if feature != feature_candidate.name:
-                                    attrs['alias'] = feature
-                                    feature = feature_candidate.name
-                                break
-                else:  # Handle all other cases.
-                    if avail_unit_type.matches(eff_unit_type) and feature in feature_index[avail_unit_type]:
-                        features = feature_index[avail_unit_type][feature]
-                        break
-            if features is None:
-                raise ValueError("No such {} `{}` for unit type `{}`.".format(kind, feature, eff_unit_type))
-
-        else:
-            raise ValueError("Invalid type for {}: `{}`".format(kind, feature.__class__))
-
-        r = _ResolvedFeature(feature, providers=[d.provider for d in features], **attrs)
-        return r
-
-    def _resolve_foreign_key(self, unit_type, foreign_type):
-        return self.__resolve_feature(unit_type, foreign_type, kind='foreign_key')
-
-    def _resolve_reverse_foreign_key(self, unit_type, foreign_type):
-        return self.__resolve_feature(unit_type, foreign_type, kind='reverse_foreign_key')
-
-    def _resolve_measure(self, unit_type, measure):
-        return self.__resolve_feature(unit_type, measure, kind='measure')
-
-    def _resolve_dimension(self, unit_type, dimension):
-        try:
-            return self.__resolve_feature(unit_type, dimension, kind='dimension')
-        except ValueError:
-            pass
-        try:
-            return self._resolve_measure(unit_type, dimension)
-        except ValueError:
-            pass
-        try:
-            return self._resolve_foreign_key(unit_type, dimension)
-        except ValueError:
-            pass
-        raise ValueError("No such dimension {} for unit type '{}'".format(dimension, unit_type))
+        return MeasureEvaluator._resolve(self, eff_unit_type, feature, role=role)._with_attrs(**attrs).as_via(via)
 
     def _find_primary_key_for_unit_type(self, unit_type):
         for identifier in sorted(self._cache.identifiers, key=lambda x: len(x.name), reverse=True):
@@ -314,9 +246,9 @@ class MeasureRegistry(object):
         """
 
         # [Provision(provider, measures, dimensions), ...]
-        unit_type = self._resolve_identifier(unit_type)
-        measures = {self._resolve_measure(unit_type, measure): self._resolve_measure(unit_type, measure) for measure in measures}
-        dimensions = {self._resolve_dimension(unit_type, dimension): self._resolve_dimension(unit_type, dimension) for dimension in dimensions}
+        unit_type = self.identifier_for_unit(unit_type)
+        measures = {self.resolve(unit_type, measure, role='measure'): self.resolve(unit_type, measure, role='measure') for measure in measures}
+        dimensions = {self.resolve(unit_type, dimension, role='dimension'): self.resolve(unit_type, dimension, role='dimension') for dimension in dimensions}
 
         def get_next_provider(unit_type, measures, dimensions, primary=False):
             provider_count = Counter()
@@ -342,17 +274,21 @@ class MeasureRegistry(object):
 
         provisions = []
         dimension_count = len(measures) + len(dimensions)
+
+        print(measures, dimensions)
         while dimension_count > 0:
             p = get_next_provider(unit_type, measures, dimensions, primary=True if require_primary and len(provisions) == 0 else False)
             join_prefix = unit_type.name
 
+            print(p.measures_for_unit(unit_type), p.dimensions_for_unit(unit_type))
+
             provisions.append(Provision(
                 p,
                 join_prefix,
-                measures=[measures.pop(measure).from_provider(p) for measure in measures.copy() if measure in p.measures],
-                dimensions=[dimensions.pop(dimension).from_provider(p) for dimension in dimensions.copy() if dimension in p.dimensions or dimension in p.identifiers or dimension in p.measures]
+                measures=[measures.pop(measure).from_provider(p) for measure in measures.copy() if measure in p.measures_for_unit(unit_type)],
+                dimensions=[dimensions.pop(dimension).from_provider(p) for dimension in dimensions.copy() if dimension in p.dimensions_for_unit(unit_type) or dimension in p.foreign_keys_for_unit(unit_type) or dimension in p.measures_for_unit(unit_type)]  # TODO: Use p.resolve?
             ))
-            if len(measures) + len(dimensions) == dimension_count and not (require_primary is True and len(provisions) > 0):
+            if len(measures) + len(dimensions) == dimension_count and not (require_primary is True and len(provisions) == 1):
                 raise RuntimeError("Could not provide provisions for: measures={}, dimensions={}. This is a bug.".format(list(measures), list(dimensions)))
             dimension_count = len(measures) + len(dimensions)
 
@@ -368,7 +304,7 @@ class MeasureRegistry(object):
         return strategy.execute(stats=stats, covariates=covariates, **opts)
 
     def show(self, *unit_types):
-        unit_types = [self._resolve_identifier(ut) for ut in unit_types] if len(unit_types) > 0 else sorted(self.unit_types)
+        unit_types = [self.identifier_for_unit(ut) for ut in unit_types] if len(unit_types) > 0 else sorted(self.unit_types)
         for unit_type in unit_types:
             print("{}:".format(unit_type.name))
 

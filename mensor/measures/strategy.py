@@ -113,7 +113,7 @@ class EvaluationStrategy(object):
         assert isinstance(strategy, EvaluationStrategy)
 
         # Add primary join key if missing and set join
-        self_unit_type = self.provider.identifier_for_unit(unit_type.name)
+        self_unit_type = self.provider.identifier_for_unit(unit_type.name).with_alias(unit_type.name)
         join_unit_type = strategy.provider.identifier_for_unit(unit_type.name)
         if self_unit_type not in self.segment_by:
             self.segment_by.insert(0, self_unit_type.as_private)
@@ -122,24 +122,24 @@ class EvaluationStrategy(object):
         else:
             strategy.segment_by[strategy.segment_by.index(join_unit_type)].private = False
 
-        strategy.join_on_left = [self_unit_type.name]
-        strategy.join_on_right = [join_unit_type.name]
+        strategy.join_on_left = [self_unit_type.fieldname(role='dimension')]
+        strategy.join_on_right = [join_unit_type.fieldname(role='dimension')]
 
         # Add common partitions to join keys
         common_partitions = list(
-            set(self.provider.partitions_for_unit(self_unit_type.name))
-            .intersection(strategy.provider.partitions_for_unit(join_unit_type.name))
+            set(self.provider.partitions_for_unit(self_unit_type.fieldname(role='dimension')))
+            .intersection(strategy.provider.partitions_for_unit(join_unit_type.fieldname(role='dimension')))
         )
 
         for partition in common_partitions:
             if partition not in self.segment_by:
-                self.segment_by.append(self.provider.resolve(partition, kind='dimension').as_private)
+                self.segment_by.append(self.provider.resolve(self.unit_type, partition, role='dimension').as_private)
             if partition not in strategy.segment_by:
-                strategy.segment_by.append(strategy.provider.resolve(partition, kind='dimension'))
+                strategy.segment_by.append(strategy.provider.resolve(strategy.unit_type, partition, role='dimension'))
             else:
                 strategy.segment_by[strategy.segment_by.index(partition)].private = False
-            strategy.join_on_left.extend([p.name for p in common_partitions])
-            strategy.join_on_right.extend([p.name for p in common_partitions])
+            strategy.join_on_left.extend([p.fieldname(role='dimension') for p in common_partitions])
+            strategy.join_on_right.extend([p.fieldname(role='dimension') for p in common_partitions])
 
         # Add measures and segmentations in parent from join
         self.measures.extend(
@@ -278,22 +278,22 @@ class EvaluationStrategy(object):
     def from_spec(cls, registry, unit_type, measures=None, segment_by=None, where=None, **opts):
 
         # Step 0: Resolve applicable measures and dimensions
-        unit_type = registry._resolve_identifier(unit_type)
+        unit_type = registry.identifier_for_unit(unit_type)
         measures = [] if measures is None else measures
         segment_by = [] if segment_by is None else segment_by
 
         measures = [
-            registry._resolve_measure(unit_type, measure) for measure in measures
+            registry.resolve(unit_type, measure, role='measure') for measure in measures
         ]
 
         segment_by = [
-            registry._resolve_dimension(unit_type, dimension) for dimension in segment_by
+            registry.resolve(unit_type, dimension, role='dimension') for dimension in segment_by
         ]
 
         where = Constraint.from_spec(where)
         where_dimensions = [
             (
-                registry._resolve_dimension(unit_type, dimension).as_implicit
+                registry.resolve(unit_type, dimension, role='dimension').as_implicit
             )
             for dimension in where.scoped_for_unit_type(unit_type).dimensions
             if dimension not in segment_by
@@ -310,15 +310,14 @@ class EvaluationStrategy(object):
                 if not dimension.via:
                     current_evaluation._asdict()[kind].append(dimension)
                 elif (  # Handle reverse foreign key joins
-                    (for_constraint or kind == 'measures')
-                    and dimension.next_unit_type in registry.reverse_foreign_keys_for_unit(unit_type)
+                    dimension.next_unit_type in registry.reverse_foreign_keys_for_unit(unit_type)
                 ):
-                    next_unit_type = registry._resolve_reverse_foreign_key(unit_type, dimension.next_unit_type)
+                    next_unit_type = registry.resolve(unit_type, dimension.next_unit_type, role='reverse_foreign_key')
                     if next_unit_type not in next_evaluations:
                         next_evaluations[next_unit_type] = DimensionBundle(unit_type=unit_type, dimensions=[], measures=[])
                     next_evaluations[next_unit_type]._asdict()[kind].append(dimension.via_next)
                 else:
-                    next_unit_type = registry._resolve_foreign_key(unit_type, dimension.next_unit_type)
+                    next_unit_type = registry.resolve(unit_type, dimension.next_unit_type, role='foreign_key')
                     if next_unit_type not in next_evaluations:
                         next_evaluations[next_unit_type] = DimensionBundle(unit_type=next_unit_type, dimensions=[], measures=[])
                     next_evaluations[next_unit_type]._asdict()[kind].append(dimension.via_next)
@@ -329,7 +328,7 @@ class EvaluationStrategy(object):
 
         # Add required dimension for joining in next unit_types
         for dimension_bundle in next_evaluations.values():
-            fk = registry._resolve_foreign_key(unit_type, dimension_bundle.unit_type)
+            fk = registry.resolve(unit_type, dimension_bundle.unit_type, role='foreign_key')
             if fk not in current_evaluation.dimensions:
                 current_evaluation.dimensions.append(fk.as_private)
 
@@ -345,7 +344,7 @@ class EvaluationStrategy(object):
         for provision in provisions:
             generic_constraints = where.generic_for_provider(provision.provider)
             generic_constraint_dimensions = [
-                provision.provider.resolve(dimension).as_private
+                provision.provider.resolve(unit_type, dimension).as_private
                 for dimension in generic_constraints.dimensions
                 if not provision.dimensions or dimension not in provision.dimensions
             ]

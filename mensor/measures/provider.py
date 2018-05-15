@@ -6,13 +6,14 @@ import six
 from mensor.constraints import CONSTRAINTS, And, Constraint
 from mensor.utils import AttrDict
 
-from .types import (AGG_METHODS, Join, MeasureDataFrame, MeasureSeries,
-                    _Dimension, _Measure, _StatisticalUnitIdentifier)
+from .types import (AGG_METHODS, Join, MeasureDataFrame, MeasureEvaluator,
+                    MeasureSeries, _Dimension, _Measure,
+                    _StatisticalUnitIdentifier)
 
 __all__ = ['MeasureProvider']
 
 
-class MeasureProvider(object):
+class MeasureProvider(MeasureEvaluator):
     """
     This is the base class that provides the API contract for all data sources
     in the `mensor` universe. Every `MeasureProvider` instance is a proxy to
@@ -118,11 +119,15 @@ class MeasureProvider(object):
         return set(self._identifiers.keys())
 
     def identifier_for_unit(self, unit_type):
+        if isinstance(unit_type, _StatisticalUnitIdentifier):
+            if unit_type.provider is self:
+                return unit_type
+            unit_type = unit_type.alias
         if unit_type in self.identifiers:
             return self.identifiers[unit_type]
         for identifier in sorted(self.identifiers, key=lambda x: len(x.name), reverse=True):
             if identifier.matches(unit_type):
-                return identifier
+                return identifier.with_alias(unit_type if isinstance(unit_type, str) else unit_type.name)
         raise ValueError("No such identifier: '{}'.".format(unit_type))
 
     def foreign_keys_for_unit(self, unit_type=None):
@@ -132,9 +137,14 @@ class MeasureProvider(object):
 
         foreign_keys = {}
         for foreign_key in self.identifiers:
-            if foreign_key != unit_type and self._unit_has_foreign_key(unit_type, foreign_key):
+            if self._unit_has_foreign_key(unit_type, foreign_key):
+                if unit_type.name == foreign_key:
+                    foreign_key = foreign_key.with_alias(unit_type.alias)
                 foreign_keys[foreign_key] = foreign_key
         return foreign_keys
+
+    def reverse_foreign_keys_for_unit(self, unit_type=None):
+        return {}
 
     def _unit_has_foreign_key(self, unit_type, foreign_key):
         return unit_type.is_unique
@@ -251,59 +261,12 @@ class MeasureProvider(object):
         }
         return self
 
-    # Resolution
-
-    def resolve(self, names, unit_type=None, kind=None):
-        """
-        This method resolves one or more names of features optionally associated
-        with a unit_type and a kind. Note that this method is concerned about
-        *functional* resolution, so if `kind='dimension'` both identifiers
-        and measures will still be resolved, since they can be used as
-        dimensions.
-
-        Parameters:
-            names (str, list<str>): A name or list of names to resolve.
-            unit_type (str, None): A unit type for which the resolution should
-                be done.
-            kind (str): One of 'measure', 'dimension' or 'identifier'.
-
-        Returns:
-            _Dimension, _Measure, _StatisticalUnitIdentifier: The resolved object.
-        """
-        if isinstance(names, dict):
-            names = list(names)
-        if not isinstance(names, list):
-            return self._resolve(names, unit_type=unit_type, kind=kind)
-
-        unresolvable = []
-        resolved = {}
-        for name in names:
-            try:
-                r = self._resolve(name, unit_type=unit_type, kind=kind)
-                resolved[r] = r
-            except ValueError:
-                unresolvable.append(name)
-        if len(unresolvable):
-            raise RuntimeError("Could not resolve {}(s) for: '{}'".format(kind or 'dimension', "', '".join(str(dim) for dim in unresolvable)))
-        return resolved
-
-    def _resolve(self, name, unit_type=None, kind=None):
-        if not isinstance(name, six.string_types):
-            return name
-        if kind in (None, 'identifier', 'dimension') and name in self.foreign_keys_for_unit(unit_type):
-            return self.identifiers[name]
-        if kind in (None, 'dimension') and name in self.dimensions_for_unit(unit_type):
-            return self.dimensions[name]
-        if kind in (None, 'dimension', 'measure') and name in self.measures_for_unit(unit_type):
-            return self.measures[name]
-        raise ValueError("No such {} name: {}.".format(kind or 'dimension', name))
-
     # Measure evaluation
     def _prepare_evaluation_args(f):
         def wrapped(self, unit_type, measures=None, segment_by=None, where=None, joins=None, **opts):
             unit_type = self.identifier_for_unit(unit_type)
-            measures = {} if measures is None else self.resolve(measures, kind='measure')
-            segment_by = {} if segment_by is None else self.resolve(segment_by, kind='dimension')
+            measures = {} if measures is None else self.resolve(unit_type=unit_type, features=measures, role='measure')
+            segment_by = {} if segment_by is None else self.resolve(unit_type=unit_type, features=segment_by, role='dimension')
             where = Constraint.from_spec(where)
             joins = joins or []
             return f(self, unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, **opts)
@@ -488,7 +451,7 @@ class MeasureProvider(object):
 
             return pre, post
 
-        measures_pre, measures_post = features_split(measures, [self.resolve('count')])
+        measures_pre, measures_post = features_split(measures, [self.resolve(unit_type=None, features='count', role='dimension')])
         segment_by_pre, segment_by_post = features_split(segment_by)
 
         return measures_pre, segment_by_pre, where_pre, measures_post, segment_by_post, where_post

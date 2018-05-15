@@ -100,14 +100,14 @@ class EvaluationStrategyTests(unittest.TestCase):
         self.assertIn('geography', es.segment_by)
         # self.assertFalse(es.segment_by['geography'].private)
         # self.assertTrue(es.segment_by['geography'].external)
-        self.assertIn('person', es.segment_by)
+        self.assertIn('person:seller', es.segment_by)
         # self.assertTrue(es.segment_by['person'].private)
         self.assertIn('ds', es.segment_by)
 
         self.assertEqual(es.joins[0].provider.name, 'people2')
 
-        self.assertEqual(set(es.joins[0].join_on_left), set(['person', 'ds']))
-        self.assertEqual(set(es.joins[0].join_on_right), set(['person', 'ds']))
+        self.assertEqual(set(es.joins[0].join_on_left), set(['person:seller', 'ds']))
+        self.assertEqual(set(es.joins[0].join_on_right), set(['person:seller', 'ds']))
 
         self.assertIsNone(es.joins[0].join_prefix)
 
@@ -140,10 +140,11 @@ class EvaluationStrategyTests(unittest.TestCase):
         self.assertEqual(len(es.joins), 2)
 
         for join in es.joins:
-            self.assertEqual({'person', 'ds'}, set(join.join_on_right))
             if join.unit_type == 'person:seller':
+                self.assertEqual({'person:seller', 'ds'}, set(join.join_on_right))
                 self.assertEqual({'person:seller', 'ds'}, set(join.join_on_left))
             elif join.unit_type == 'person:buyer':
+                self.assertEqual({'person:buyer', 'ds'}, set(join.join_on_right))
                 self.assertEqual({'person:buyer', 'ds'}, set(join.join_on_left))
             else:
                 raise ValueError("Invalid unit type detected.")
@@ -159,7 +160,7 @@ class EvaluationStrategyTests(unittest.TestCase):
         # self.assertTrue(es.segment_by['transaction/value'].external)
         self.assertIn('name', es.segment_by)
         # self.assertFalse(es.segment_by['name'].private)
-        self.assertIn('person', es.segment_by)  # TODO: Expose as person:seller?
+        self.assertIn('person:seller', es.segment_by)
         # self.assertFalse(es.segment_by['person'].private)
 
         # Join information
@@ -169,5 +170,19 @@ class EvaluationStrategyTests(unittest.TestCase):
         self.assertEqual(rjoin.strategy_type, STRATEGY_TYPE.UNIT_REBASE)
         self.assertIn('person:seller', rjoin.segment_by)
         self.assertIn('ds', rjoin.segment_by)
-        self.assertEqual({'person', 'ds'}, set(rjoin.join_on_left))
+        self.assertEqual({'person:seller', 'ds'}, set(rjoin.join_on_left))
         self.assertEqual({'person:seller', 'ds'}, set(rjoin.join_on_right))
+
+    def test_automatic_aliasing(self):
+        es = self.registry.evaluate(
+            'person:seller',
+            measures=['transaction/value'],
+            segment_by=['person:seller'],
+            dry_run=True
+        )
+
+        self.assertIn('person:seller', es.segment_by)
+
+        person_dimension = es.segment_by[es.segment_by.index('person:seller')]
+        self.assertEqual(person_dimension.alias, 'person:seller')
+        self.assertEqual(person_dimension.name, 'person')

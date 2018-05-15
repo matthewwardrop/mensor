@@ -36,8 +36,6 @@ class PandasMeasureProviderTests(unittest.TestCase):
         )
         self.registry.register(transactions)
 
-        self.registry.show()
-
     def test_simple(self):
         df = self.registry.evaluate(
             'transaction',
