@@ -54,7 +54,8 @@ class PandasMeasureProvider(MeasureProvider):
         )
 
     @classmethod
-    def _finalise_dataframe(cls, df, measures, segment_by, where, stats=False, unit_agg=True):
+    def _finalise_dataframe(cls, df, measures, segment_by, where, stats=False,
+                            unit_agg=True, reagg=False):
         """
         This method finalises a `pandas.DataFrame` instance by applying the
         following steps:
@@ -103,12 +104,13 @@ class PandasMeasureProvider(MeasureProvider):
             df = cls._dataframe_agg(df, measures, segment_by, unit_agg=True, stats=False)
 
         if not unit_agg or stats:
-            df = cls._dataframe_agg(df, measures, segment_by, unit_agg=False, stats=stats)
+            df = cls._dataframe_agg(df, measures, segment_by, unit_agg=False, stats=stats, reagg=reagg)
 
         return df
 
     @classmethod
-    def _dataframe_agg(cls, df, measures, segment_by, unit_agg=False, stats=False):
+    def _dataframe_agg(cls, df, measures, segment_by, unit_agg=False,
+                       stats=False, reagg=False):
 
         measure_cols = _Measure.get_all_fields(measures, unit_agg=unit_agg, stats=stats)
         segment_by_cols = [s.fieldname(role='dimension') for s in segment_by]
@@ -117,7 +119,7 @@ class PandasMeasureProvider(MeasureProvider):
             return pd.DataFrame([], columns=measure_cols + segment_by_cols)
 
         measure_cols, measure_aggs = cls._measure_agg_maps(
-            measures, external=True, unit_agg=unit_agg, stats=stats
+            measures, external=True, unit_agg=unit_agg, stats=stats, reagg=reagg
         )
 
         if isinstance(df, pd.Series):
@@ -148,7 +150,7 @@ class PandasMeasureProvider(MeasureProvider):
 
     # Aggregation related methods
     @classmethod
-    def _measure_agg_maps(cls, measures, external=True, unit_agg=False, stats=False):
+    def _measure_agg_maps(cls, measures, external=True, unit_agg=False, stats=False, reagg=False):
         def measure_map(name, op):
             return lambda df: op(df[name])
         col_maps = {}
@@ -157,8 +159,8 @@ class PandasMeasureProvider(MeasureProvider):
             if not external and measure.external:
                 continue
             for field_name, (col_agg, col_map) in measure.get_fields(stats=stats, unit_agg=unit_agg, for_pandas=True).items():
-                col_aggs[field_name] = col_agg
-                col_maps[field_name] = measure_map(measure.fieldname(role='measure'), col_map)
+                col_aggs[field_name] = 'sum' if reagg else col_agg
+                col_maps[field_name] = measure_map(measure.fieldname(role='measure'), (lambda x: x) if reagg else col_map)
         return col_maps, col_aggs
 
     @property
@@ -171,7 +173,7 @@ class PandasMeasureProvider(MeasureProvider):
             AGG_METHODS.SUM: ('sum', lambda x: x),
             AGG_METHODS.MEAN: ('mean', lambda x: x),
             AGG_METHODS.SQUARE_SUM: ('sum', lambda x: x**2),
-            AGG_METHODS.COUNT: ('sum', lambda x: x.notnull())
+            AGG_METHODS.COUNT: ('sum', lambda x: x.notnull().astype(int))
         }
 
     @classmethod

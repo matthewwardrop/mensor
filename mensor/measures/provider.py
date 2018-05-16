@@ -373,7 +373,7 @@ class MeasureProvider(MeasureEvaluator):
 
             result = PandasMeasureProvider._finalise_dataframe(
                 df=result, measures=measures_post, segment_by=segment_by_post,
-                where=where_post, stats=stats
+                where=where_post, stats=stats, reagg=True
             )
 
         if isinstance(result, pd.Series):
