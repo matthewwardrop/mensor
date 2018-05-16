@@ -76,6 +76,8 @@ class EvaluationStrategyTests(unittest.TestCase):
         self.assertIn('age', es.measures)
         self.assertIn('name', es.segment_by)
         self.assertIn('ds', es.segment_by)
+        self.assertTrue(es.segment_by['ds'].private)
+        self.assertTrue(es.segment_by['ds'].implicit)
         self.assertIsInstance(es.where, Constraint)
         self.assertEqual(es.where.field, 'ds')
         self.assertEqual(es.where.value, '2018-01-01')

@@ -69,6 +69,8 @@ class SequenceMap(object):
         self.__values.move_to_end(value, last=False)
 
     def append(self, value):
+        if value in self.__values:
+            raise ValueError("'{}' is already in SequenceMap.".format(value))
         self.__values[value] = value
 
     def extend(self, values):
@@ -76,7 +78,7 @@ class SequenceMap(object):
             self.append(value)
 
     def copy(self):
-        return self.__class__(self.__values.keys())
+        return self.__class__(self.__values.values())
 
     def get(self, value, default=None):
         return self.__values.get(value, default)
@@ -95,10 +97,7 @@ class SequenceMap(object):
         self.__values[item] = value
 
     def __iter__(self):
-        return self.__values.__iter__()
-
-    def __reversed__(self):
-        return self.__values.__reversed__()
+        return iter(self.__values.values())
 
     def __len__(self):
         return len(self.__values)
