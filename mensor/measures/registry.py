@@ -144,12 +144,18 @@ class MeasureRegistry(MeasureEvaluator):
 
     @property
     def unit_types(self):
-        return set(self._cache.identifiers.keys())
+        return SequenceMap(
+            self.identifier_for_unit(ut) for ut in self._cache.identifiers.keys()
+        )
 
     # MeasureEvaluator methods
 
     def identifier_for_unit(self, unit_type):
-        return self._cache.identifiers[unit_type][0]
+        return _ResolvedFeature(
+            name=unit_type if isinstance(unit_type, str) else unit_type.name,
+            providers=[d.provider for d in self._cache.identifiers[unit_type]],
+            kind='identifier'
+        )
 
     def _features_lookup(self, unit_type, kind, attr_filter=None):
         assert kind in ('foreign_key', 'reverse_foreign_key', 'dimension', 'measure')
@@ -304,7 +310,10 @@ class MeasureRegistry(MeasureEvaluator):
     def show(self, *unit_types):
         unit_types = [self.identifier_for_unit(ut) for ut in unit_types] if len(unit_types) > 0 else sorted(self.unit_types)
         for unit_type in unit_types:
-            print("{}:".format(unit_type.name))
+            print("{}:{}".format(
+                unit_type.name,
+                " [{}]".format(unit_type.desc) if unit_type.desc else ""
+            ))
 
             features = [
                 ('Foreign Keys', self.foreign_keys_for_unit(unit_type)),
@@ -315,9 +324,14 @@ class MeasureRegistry(MeasureEvaluator):
             ]
 
             for feature_name, feature_set in features:
-                if not len(feature_set):
+                if not len(feature_set) or len(feature_set) == 1 and feature_set.first == unit_type:
                     continue
-                print("\t{}".format(feature_name))
+                print("    {}:".format(feature_name))
                 for feature in sorted(feature_set):
                     if feature != unit_type:
-                        print("\t\t{}::{}: {}".format(feature.provider.name, feature.name, feature.desc or "No description."))
+                        print(
+                            "        - {}{}".format(
+                                feature.alias,
+                                " [{}]".format(feature.desc) if feature.desc else ""
+                            )
+                        )

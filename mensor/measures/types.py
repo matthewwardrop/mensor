@@ -375,6 +375,13 @@ class _ResolvedFeature(_FeatureAttrsMixin):
             return NotImplemented
         return False
 
+    @property
+    def desc(self):
+        for provider in self.providers:
+            instance = self.from_provider(provider)
+            if instance.desc:
+                return instance.desc
+
 
 class _Dimension(_ProvidedFeature):
 
