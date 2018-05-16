@@ -19,7 +19,7 @@ class SQLDialect(object):
 
     QUOTE_COL = '"'
     QUOTE_STR = "'"
-    COLUMN_PATTERN = re.compile(r"^[\w|:_]+$")
+    COLUMN_PATTERN = re.compile(r"^[\w|:_.]+$")
 
     AGG_METHODS = {
         AGG_METHODS.SUM: lambda x: "SUM({})".format(x),
