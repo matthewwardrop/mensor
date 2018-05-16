@@ -1,3 +1,4 @@
+import functools
 import logging
 
 import pandas as pd
@@ -168,7 +169,7 @@ class PandasMeasureProvider(MeasureProvider):
             if not external and measure.external:
                 continue
             for field_name, (col_agg, col_map) in measure.get_fields(stats=stats, unit_agg=unit_agg, for_pandas=True).items():
-                col_aggs[field_name] = 'sum' if reagg else col_agg
+                col_aggs[field_name] = functools.partial(pd.Series.sum, min_count=1) if reagg else col_agg
                 col_maps[field_name] = measure_map(measure.fieldname(role='measure'), (lambda x: x) if reagg else col_map)
         return col_maps, col_aggs
 
@@ -178,11 +179,12 @@ class PandasMeasureProvider(MeasureProvider):
 
     @classmethod
     def _get_agg_methods(cls):
+        sum_agg = functools.partial(pd.Series.sum, min_count=1)
         return {
-            AGG_METHODS.SUM: ('sum', lambda x: x),
+            AGG_METHODS.SUM: (sum_agg, lambda x: x),
             AGG_METHODS.MEAN: ('mean', lambda x: x),
-            AGG_METHODS.SQUARE_SUM: ('sum', lambda x: x**2),
-            AGG_METHODS.COUNT: ('sum', lambda x: x.notnull().astype(int))
+            AGG_METHODS.SQUARE_SUM: (sum_agg, lambda x: x**2),
+            AGG_METHODS.COUNT: (sum_agg, lambda x: x.notnull().astype(int))
         }
 
     @classmethod
