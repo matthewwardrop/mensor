@@ -307,23 +307,30 @@ class MeasureRegistry(MeasureEvaluator):
             return strategy
         return strategy.execute(stats=stats, covariates=covariates, **opts)
 
-    def show(self, *unit_types):
+    def show(self, *unit_types, kind=None):
         unit_types = [self.identifier_for_unit(ut) for ut in unit_types] if len(unit_types) > 0 else sorted(self.unit_types)
+        if isinstance(kind, str):
+            kind = [kind]
+        if not kind:
+            kind = ['foreign_key', 'reverse_foreign_key', 'dimension', 'partition', 'measure']
+
         for unit_type in unit_types:
             print("{}:{}".format(
                 unit_type.name,
                 " [{}]".format(unit_type.desc) if unit_type.desc else ""
             ))
 
-            features = [
-                ('Foreign Keys', self.foreign_keys_for_unit(unit_type)),
-                ('Reverse Foreign Keys', self.reverse_foreign_keys_for_unit(unit_type)),
-                ('Dimensions', self.dimensions_for_unit(unit_type, include_partitions=False)),
-                ('Partitions', self.partitions_for_unit(unit_type)),
-                ('Measures', self.measures_for_unit(unit_type))
-            ]
+            features = {
+                'foreign_key': self.foreign_keys_for_unit(unit_type),
+                'reverse_foreign_key': self.reverse_foreign_keys_for_unit(unit_type),
+                'dimension': self.dimensions_for_unit(unit_type, include_partitions=False),
+                'partition': self.partitions_for_unit(unit_type),
+                'measure': self.measures_for_unit(unit_type)
+            }
 
-            for feature_name, feature_set in features:
+            for k in kind:
+                feature_name = "{}s".format(k.replace('_', ' ').title())
+                feature_set = features[k]
                 if not len(feature_set) or len(feature_set) == 1 and feature_set.first == unit_type:
                     continue
                 print("    {}:".format(feature_name))
