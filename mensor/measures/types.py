@@ -350,7 +350,7 @@ class _ResolvedFeature(_FeatureAttrsMixin):
         from .provider import MeasureProvider
         if not isinstance(provider, MeasureProvider):
             provider = self.providers[provider]
-        return provider.resolve(self.unit_type, features=self.alias)._with_attrs(**self.attrs)
+        return provider.resolve(None, features=self.name)._with_attrs(**self.attrs)
 
     def __repr__(self):
         return (
