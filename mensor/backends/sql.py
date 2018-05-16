@@ -1,4 +1,5 @@
 import numbers
+import re
 import textwrap
 
 import jinja2
@@ -18,6 +19,7 @@ class SQLDialect(object):
 
     QUOTE_COL = '"'
     QUOTE_STR = "'"
+    COLUMN_PATTERN = re.compile(r"^[\w|:_]+$")
 
     AGG_METHODS = {
         AGG_METHODS.SUM: lambda x: "SUM({})".format(x),
@@ -62,10 +64,10 @@ class SQLDialect(object):
     TEMPLATE_TABLE = textwrap.dedent("""
         SELECT
             {%- for dimension in dimensions %}
-            {% if loop.index0 > 0 or identifiers%}, {% endif %}{{ dimension.expr }}
+            {% if loop.index0 > 0 or identifiers%}, {% endif %}{{ dimension.expr | col }} AS {{ dimension.fieldname(role='dimension') | col }}
             {%- endfor %}
             {%- for measure in measures %}
-            {% if loop.index0 > 0 or identifiers or dimensions %}, {% endif %}{{ measure.expr }}
+            {% if loop.index0 > 0 or identifiers or dimensions %}, {% endif %}{{ measure.expr | col }} AS {{ measure.fieldname(role='measure') | col }}
             {%- endfor %}
         FROM {{table}}
     """).strip()
@@ -92,11 +94,13 @@ class SQLDialect(object):
 
     # SQL rendering helpers
     @classmethod
-    def column_encode(cls, column_name):
-        return '{quote}{col}{quote}'.format(
-            quote=cls.QUOTE_COL,
-            col=column_name
-        )
+    def column_encode(cls, column_expr):
+        if cls.COLUMN_PATTERN.match(column_expr):
+            return '{quote}{col}{quote}'.format(
+                quote=cls.QUOTE_COL,
+                col=column_expr
+            )
+        return column_expr
 
     @classmethod
     def column_decode(cls, column_name):
@@ -119,16 +123,20 @@ class SQLDialect(object):
     #     return value
 
     @classmethod
-    def source_column_encode(cls, source_name, column_name, default=None):
-        return (
-            "COALESCE({source}.{column}, {default})"
-            if default is not None else
-            "{source}.{column}"
-        ).format(
-            source=cls.column_encode(source_name),
-            column=cls.column_encode(column_name),
-            default=cls.value_encode(default) if default is not None else None
-        )
+    def source_column_encode(cls, source_name, column_expr, default=None):
+        if cls.COLUMN_PATTERN.match(column_expr):
+            column = "{source}.{column}".format(
+                source=cls.column_encode(source_name),
+                column=cls.column_encode(column_expr)
+            )
+        else:
+            column = cls.column_encode(column_expr)
+        if default is not None:
+            column = "COALESCE({column}, {default})".format(
+                column=column,
+                default=cls.value_encode(default)
+            )
+        return column
 
 
 class PrestoDialect(SQLDialect):
@@ -140,11 +148,10 @@ class HiveDialect(SQLDialect):
     QUOTE_COL = '`'
 
     @classmethod
-    def column_encode(cls, column_name):
-        return '{quote}{col}{quote}'.format(
-            quote=cls.QUOTE_COL,
-            col=column_name.replace(':', '+').replace('/', '-')
-        )
+    def column_encode(cls, column_expr):
+        if cls.COLUMN_PATTERN.match(column_expr):
+            return SQLDialect.column_encode(cls, column_expr).replace(':', '+').replace('/', '-')
+        return SQLDialect.column_encode(cls, column_expr)
 
     @classmethod
     def column_decode(cls, column_name):
@@ -158,6 +165,8 @@ DIALECTS = {
 
 
 class SQLMeasureProvider(MeasureProvider):
+
+    COLUMN_EXPR_PREAPPLIED = False
 
     def __init__(self, *args, sql=None, db_client=None, dialect='presto', **kwargs):
         assert db_client is not None, "Must specify an (Omniduct-compatible) database client."
@@ -221,8 +230,8 @@ class SQLMeasureProvider(MeasureProvider):
     def _table_name(self, unit_type):
         return "provision_{}_{}".format(self.name, unit_type.name)
 
-    def _col(self, column_name):
-        return self.dialect.column_encode(column_name)
+    def _col(self, column_expr):
+        return self.dialect.column_encode(column_expr)
 
     def _val(self, value):
         return self.dialect.value_encode(value)
@@ -236,13 +245,13 @@ class SQLMeasureProvider(MeasureProvider):
             if not measure.external:
                 if measure.via_name in field_map['measures']:
                     raise ValueError(measure.via_name)
-                field_map['measures'][measure.via_name] = self.dialect.source_column_encode(self_table_name, measure.expr, measure.default)
+                field_map['measures'][measure.via_name] = self.dialect.source_column_encode(self_table_name, measure.fieldname(role='measure') if self.COLUMN_EXPR_PREAPPLIED else measure.expr, measure.default)
 
         for dimension in dimensions:
             if not dimension.external:
                 if dimension.via_name in field_map['dimensions']:
                     raise ValueError(dimension.via_name)
-                field_map['dimensions'][dimension.via_name] = self.dialect.source_column_encode(self_table_name, dimension.expr, dimension.default)
+                field_map['dimensions'][dimension.via_name] = self.dialect.source_column_encode(self_table_name, dimension.fieldname(role='dimension') if self.COLUMN_EXPR_PREAPPLIED else dimension.expr, dimension.default)
 
         for join in joins:
             for measure in join.measures:
@@ -310,6 +319,8 @@ class SQLMeasureProvider(MeasureProvider):
 
 
 class SQLTableMeasureProvider(SQLMeasureProvider):
+
+    COLUMN_EXPR_PREAPPLIED = True
 
     def _sql(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
         if len(self.identifiers) + len(self.dimensions) + len(self.measures) == 0:

@@ -42,10 +42,10 @@ class PandasMeasureProvider(MeasureProvider):
         df = (
             pd.DataFrame()
             .assign(**{
-                dimension.fieldname(role='dimension'): raw_data[dimension.expr] for dimension in segment_by
+                dimension.fieldname(role='dimension'): raw_data.eval(dimension.expr) for dimension in segment_by
             })
             .assign(**{
-                measure.fieldname(role='measure'): raw_data[measure.expr] for measure in measures
+                measure.fieldname(role='measure'): raw_data.eval(measure.expr) for measure in measures
             })
         )
 
