@@ -1,3 +1,5 @@
+import logging
+
 import pandas as pd
 
 from mensor.constraints import CONSTRAINTS
@@ -125,6 +127,13 @@ class PandasMeasureProvider(MeasureProvider):
         if isinstance(df, pd.Series):
             df = df.to_frame().T
 
+        if len(segment_by_cols) > 0 and any([df[dimension].hasnans for dimension in segment_by_cols]):
+            logging.warning(
+                "The pandas backend currently drops null values from the "
+                "groupby index, and null values were found in the "
+                "segmentation fields: {}".format(segment_by_cols)
+            )
+
         if len(segment_by_cols) > 0 and len(measure_cols) > 0:
             df = (
                 df
@@ -134,7 +143,7 @@ class PandasMeasureProvider(MeasureProvider):
                 .agg(measure_aggs)
                 .reset_index()
             )
-        elif len(segment_by) > 0:
+        elif len(segment_by_cols) > 0:
             df = (
                 df
                 .assign(dummy=1)
