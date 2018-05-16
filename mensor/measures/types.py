@@ -100,6 +100,11 @@ class MeasureEvaluator(metaclass=ABCMeta):
                  joins=None, stats=True, covariates=False, **opts):
         raise NotImplementedError
 
+    @abstractmethod
+    def get_ir(self, unit_type, measures=None, segment_by=None, where=None,
+               joins=None, stats=True, covariates=False, **opts):
+        raise NotImplementedError
+
 
 class Join(object):
 

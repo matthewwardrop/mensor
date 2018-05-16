@@ -299,13 +299,23 @@ class MeasureRegistry(MeasureEvaluator):
         return provisions
 
     def evaluate(self, unit_type, measures=None, segment_by=None, where=None,
-                 stats=True, covariates=False, dry_run=False, **opts):
-        strategy = EvaluationStrategy.from_spec(
-            self, unit_type, measures, where=where, segment_by=segment_by
+                 stats=True, covariates=False, **opts):
+        strategy = self.get_strategy(
+            unit_type, measures=measures, segment_by=segment_by, where=where
         )
-        if dry_run:
-            return strategy
         return strategy.execute(stats=stats, covariates=covariates, **opts)
+
+    def get_ir(self, unit_type, measures=None, segment_by=None, where=None,
+               stats=True, covariates=False, dry_run=False, **opts):
+        strategy = self.get_strategy(
+            unit_type, measures=measures, segment_by=segment_by, where=where
+        )
+        return strategy.execute(stats=stats, covariates=covariates, ir_only=True, **opts)
+
+    def get_strategy(self, unit_type, measures=None, segment_by=None, where=None):
+        return EvaluationStrategy.from_spec(
+            self, unit_type, measures=measures, segment_by=segment_by, where=where
+        )
 
     def show(self, *unit_types, kind=None):
         unit_types = [self.identifier_for_unit(ut) for ut in unit_types] if len(unit_types) > 0 else sorted(self.unit_types)
