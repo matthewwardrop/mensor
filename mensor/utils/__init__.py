@@ -1,4 +1,5 @@
 import functools
+import logging
 import warnings
 from collections import OrderedDict
 
@@ -104,3 +105,75 @@ class SequenceMap(object):
 
     def __repr__(self):
         return '{{{}}}'.format(', '.join([v.__repr__() for v in self]))
+
+
+class Options(object):
+
+    def __init__(self, options=None):
+        self._options = options or {}
+
+    def add_option(self, name, desc, required, default=None, parser=None):
+        if name in self._options:
+            raise ValueError("Option of name `{}` already exists.".format(name))
+        self._options[name] = {"desc": desc, "required": required, "default": default, "parser": parser, "pinned": False}
+        return self
+
+    def process(self, **opts):
+        params = {}
+        ignoring = []
+        for key, value in opts.items():
+            if key not in self._options or self._options[key].get('pinned'):
+                ignoring.append(key)
+            else:
+                param_schema = self._options[key]
+                params[key] = param_schema['parser'](value) if param_schema['parser'] else value
+
+        if len(ignoring) > 0:
+            logging.warning("Ignoring invalid keys: '{}'".format("', '".join(ignoring)))
+
+        for name, schema in self._options.items():
+            if name not in params:
+                if schema['required'] and not schema['pinned']:
+                    raise RuntimeError("A value for parameter `{}` ({}) was not provided.".format(name, schema['desc']))
+                else:
+                    params[name] = schema['default']
+        return params
+
+    def show(self):
+        for name in sorted(self._options):
+            schema = self._options[name]
+            print("{}:".format(name))
+            for field in ['desc', 'required', 'default']:
+                print("    {}: {}".format(field, schema[field]))
+            if schema['parser']:
+                print("    Note: Inputs are parsed and/or validated.")
+
+    def copy(self):
+        return self.__class__(options=self._options.copy())
+
+    def pin(self, **opts):
+        for name, value in opts.items():
+            if name in self._options:
+                self._options[name]['pinned'] = True
+                self._options[name]['default'] = value
+
+    def with_pinned(self, **opts):
+        return self.copy().pin(**opts)
+
+
+class OptionsMixin(object):
+
+    @property
+    def opts(self):
+        if not hasattr(self, '_OptionsMixin__opts'):
+            self.__opts = Options()
+        return self.__opts
+
+    @opts.setter
+    def opts(self, opts):
+        if isinstance(opts, dict):
+            self.opts.pin(**opts)
+        else:
+            if not isinstance(opts, Options):
+                raise ValueError("`opts` must be of type `mensor.utils.Options`.")
+            self.__opts = opts

@@ -11,12 +11,12 @@ import six
 from uncertainties import ufloat
 from uncertainties.unumpy import uarray
 
-from mensor.utils import startseq_match
+from mensor.utils import startseq_match, OptionsMixin
 
 __all__ = ['Join', '_Dimension', '_StatisticalUnitIdentifier', '_Measure', 'MeasureDataFrame']
 
 
-class MeasureEvaluator(metaclass=ABCMeta):
+class MeasureEvaluator(OptionsMixin, metaclass=ABCMeta):
 
     @abstractmethod
     def identifier_for_unit(self, unit_type):
