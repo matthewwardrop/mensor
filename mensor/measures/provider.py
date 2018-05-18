@@ -231,12 +231,11 @@ class MeasureProvider(MeasureEvaluator):
     @property
     def provisions(self):
         return {
-            name: kwargs['source'].evaluate(
+            name: kwargs['source'].get_strategy(
                 unit_type=kwargs['unit_type'],
                 measures=kwargs['measures'],
                 segment_by=kwargs['segment_by'],
                 where=kwargs['where'],
-                dry_run=True,
                 **kwargs['opts']
             )
             for name, kwargs in self._provisions.items()
@@ -262,13 +261,14 @@ class MeasureProvider(MeasureEvaluator):
 
     # Measure evaluation
     def _prepare_evaluation_args(f):
-        def wrapped(self, unit_type, measures=None, segment_by=None, where=None, joins=None, **opts):
+        def wrapped(self, unit_type, measures=None, segment_by=None, where=None, joins=None, stats=True, covariates=False, **opts):
             unit_type = self.identifier_for_unit(unit_type)
             measures = {} if measures is None else self.resolve(unit_type=unit_type, features=measures, role='measure')
             segment_by = {} if segment_by is None else self.resolve(unit_type=unit_type, features=segment_by, role='dimension')
             where = Constraint.from_spec(where)
             joins = joins or []
-            return f(self, unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, **opts)
+            opts = self.opts.process(**opts)
+            return f(self, unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, stats=True, covariates=False, **opts)
         return wrapped
 
     @_prepare_evaluation_args
