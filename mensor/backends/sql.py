@@ -371,23 +371,48 @@ class SQLTableMeasureProvider(SQLMeasureProvider):
 class SQLMetricImplementation(MetricImplementation):
 
     def __init__(self, sql, post_stats=True):
-        self.sql = textwrap.dedent(sql) if sql else sql
+        self._sql = textwrap.dedent(sql) if sql else sql
         self.post_stats = post_stats
 
-    def _is_compatible_with(self, strategy):
+    @property
+    def sql(self):
+        return self._sql
+
+    def _is_compatible_with_strategy(self, strategy):
         return isinstance(strategy.provider, SQLMeasureProvider) and strategy.joins_all_compatible
 
-    def evaluate(self, strategy, marginalise=None, ir_only=False, **opts):
+    def evaluate(self, strategy, marginalise=None, **opts):
         ir = self.get_ir(strategy, marginalise=marginalise, **opts)
-        if ir_only:
-            return ir
         return strategy.provider.db_client.query(ir)
 
     def get_ir(self, strategy, marginalise=None, **opts):
-        return jinja2.Template(self.sql).render(
+        return strategy.provider._template_environment.get_template(self.sql).render(
             measures=[m for m in strategy.measures if not m.private],
             segment_by=[d for d in strategy.segment_by if not d.private],
             marginalise=marginalise or [],
             provision=strategy.execute(ir_only=True, stats=self.post_stats),
             **opts
         )
+
+
+class SimpleSQLMetricImplementation(SQLMetricImplementation):
+
+    TEMPLATE = """
+        SELECT
+            {%- for dimension in segment_by if dimension not in marginalise and not dimension.private %}
+            {% if loop.index0 > 0 %}, {% endif %}{{dimension.via_name}}
+            {%- endfor %}
+            {%- for metric in metrics %}
+            {% if segment_by|length > 0 or loop.index0 > 0 %}, {% endif %}{{metric}}
+            {%- endfor %}
+        FROM (
+            {{ provision | indent(width=8) }}
+        )
+    """
+
+    def __init__(self, metrics_callback):
+        SQLMetricImplementation.__init__(self, self.TEMPLATE)
+        self.metrics_callback = metrics_callback
+
+    def get_ir(self, strategy, marginalise=None, **opts):
+        return SQLMetricImplementation.get_ir(self, strategy, marginalise=marginalise, metrics=self.metrics_callback(strategy, **opts), **opts)

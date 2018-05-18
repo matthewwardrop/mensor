@@ -1,75 +1,99 @@
-from abc import abstractmethod, abstractproperty
+from abc import ABCMeta, abstractmethod, abstractproperty
 from collections import OrderedDict
 
+from mensor.utils import OptionsMixin
 
-class Metric(object):
 
-    def __init__(self, name, unit_type=None, required_measures=None, required_segmentation=None,
-                 required_constraints=None, marginal_dimensions=None, implementations=None, desc=None):
+class Metric(OptionsMixin, metaclass=ABCMeta):
+
+    def _process_opts(f):
+        def wrapped(self, *args, **opts):
+            opts = self.opts.process(**opts)
+            return f(self, *args, **opts)
+        return wrapped
+
+    def __init__(self, name, unit_type=None, desc=None, **kwargs):
         self.name = name
         self.unit_type = unit_type
-        self.implementations = implementations or OrderedDict()
-        self._required_measures = required_measures or []
-        self._required_segmentation = required_segmentation
-        self._required_constraints = required_constraints
-        self._marginal_dimensions = marginal_dimensions or []
         self.desc = desc
 
-    @property
-    def required_measures(self):
-        return self._required_measures
+        self.implementations = OrderedDict()
 
-    @property
-    def required_segmentation(self):
-        return self._required_segmentation
+        self.opts.add_option('implementation', "The implementation to use to evaluate the metrics.", False)
 
-    @property
-    def required_constraints(self):
-        return self._required_constraints
+        self._init(**kwargs)
 
-    @property
-    def marginal_dimensions(self):
-        return self._marginal_dimensions
+    def _init(self, **kwargs):
+        pass
+
+    @_process_opts
+    def required_measures(self, **opts):
+        return self._required_measures(**opts)
+
+    @abstractmethod
+    def _required_measures(self, **opts):
+        raise NotImplementedError
+
+    @_process_opts
+    def required_segmentation(self, **opts):
+        return self._required_segmentation(**opts)
+
+    @abstractmethod
+    def _required_segmentation(self, **opts):
+        raise NotImplementedError
+
+    @_process_opts
+    def required_constraints(self, **opts):
+        return self._required_constraints(**opts)
+
+    @abstractmethod
+    def _required_constraints(self, **opts):
+        raise NotImplementedError
+
+    @_process_opts
+    def marginal_dimensions(self, **opts):
+        return self._margin_dimensions(**opts)
+
+    def _margin_dimensions(self, **opts):
+        return []
 
     def _implementation_for_strategy(self, strategy):
         for implementation in self.implementations.values():
-            if implementation._is_compatible_with(strategy):
+            if implementation._is_compatible_with_strategy(strategy):
                 return implementation
         raise RuntimeError("No valid implementation for strategy.")
 
     def _is_compatible_with(self, strategy):
         for implementation in self.implementations.values():
-            if implementation._is_compatible_with(strategy):
+            if implementation._is_compatible_with_strategy(strategy):
                 return True
         return False
 
-    def evaluate(self, strategy, marginalise=None, ir_only=False, **opts):
+    @_process_opts
+    def evaluate(self, strategy, marginalise=None, **opts):
         # TODO: Check that strategy has required measures, segmentation and constraints.
         implementation = self._implementation_for_strategy(strategy)
-        return implementation.evaluate(strategy, marginalise=marginalise, ir_only=ir_only, **opts)
+        return implementation.evaluate(strategy, marginalise=marginalise, **opts)
+
+    @_process_opts
+    def get_ir(self, strategy, marginalise=None, **opts):
+        implementation = self._implementation_for_strategy(strategy)
+        return implementation.get_ir(strategy, marginalise=marginalise, **opts)
 
 
-class MetricImplementation(object):
+class MetricImplementation(metaclass=ABCMeta):
 
-    def _is_compatible_with(self, strategy, marginalise=None, ir_only=False, **opts):
+    @abstractmethod
+    def evaluate(self, strategy, marginalise=None, ir_only=False, **opts):
         raise NotImplementedError
 
-    def evaluate(self, strategy):
+    @abstractmethod
+    def get_ir(self, strategy, marginalise=None, ir_only=False, **opts):
         raise NotImplementedError
 
-# The following no longer works with the latest Metric code, but we need
-# something like it to be implemented, so we here leave it commented out here.
-# class RatioMetric(Metric):
-#     # TODO: account for covariance
-#
-#     def __init__(self, name, numerator, denominator):
-#         Metric.__init__(self, name)
-#         self.numerator = numerator
-#         self.denominator = denominator
-#
-#     def _evaluate(self, mdf):
-#         return mdf[self.numerator] / mdf[self.denominator]
-#
-#     @property
-#     def required_measures(self):
-#         return [self.numerator.split('|')[0], self.denominator.split('|')[0]]
+    @abstractmethod
+    def _is_compatible_with_strategy(self, strategy, marginalise=None, **opts):
+        raise NotImplementedError
+
+    def _is_compatible_with_metric(self, metric, marginalise=None, **opts):
+        return False

@@ -20,37 +20,53 @@ class MetricRegistry(object):
     def unregister(self, name):
         del self._metrics[name]
 
-    def evaluate(self, metric, segment_by=None, where=None, dry_run=False, ir_only=False, **opts):
-        if isinstance(metric, list):
-            return [self.evaluate(m, segment_by=segment_by, where=where, dry_run=dry_run, opts=opts) for m in metric]
+    def evaluate(self, metrics, segment_by=None, where=None, dry_run=False, ir_only=False, **opts):
 
-        metric = self._metrics[metric]
+        results = []
+
+        if isinstance(metrics, str):
+            metrics = [metrics]
+
+        for strategy, marginal_dimensions, metrics in self._group_metric_evaluations(metrics=metrics, segment_by=segment_by, where=where, **opts):
+            result = metrics[0].evaluate(strategy, marginal_dimensions, **opts)
+
+            if isinstance(result, pd.Series):
+                result = MeasureSeries(result)
+            else:
+                result = MeasureDataFrame(result)
+
+            results.append(result)
+
+        return pd.concat([result.set_index(segment_by) for result in results], axis=1)
+
+    def get_ir(self, metrics, segment_by=None, where=None, dry_run=False, **opts):
+        for strategy, marginal_dimensions, metrics in self._group_metric_evaluations(metrics=metrics, segment_by=segment_by, where=where, **opts):
+            return metrics[0].get_ir(strategy, marginal_dimensions, **opts)
+
+    def _group_metric_evaluations(self, metrics, segment_by, where, **opts):
+
         if segment_by is None:
             segment_by = []
         if not isinstance(segment_by, list):
             segment_by = [segment_by]
 
-        measures = metric.required_measures
-        if metric.required_segmentation:
-            segment_by += list(set(metric.required_segmentation).difference(segment_by))
-        marginal_dimensions = list(set(metric.marginal_dimensions or []).difference(segment_by))
-        segment_by += marginal_dimensions
+        for metric in metrics:
 
-        if metric.required_constraints:
-            required_constraints = Constraint.from_spec(metric.required_constraints)
-            if where is None:
-                where = required_constraints
-            else:
-                where = Constraint.from_spec(where) & required_constraints
+            metric = self._metrics[metric]
 
-        strategy = self.measures.evaluate(metric.unit_type, measures=measures, segment_by=segment_by, where=where, dry_run=True, **opts.pop('measure_opts', {}))
+            measures = metric.required_measures(**opts)
+            if metric.required_segmentation(**opts):
+                segment_by += list(set(metric.required_segmentation(**opts)).difference(segment_by))
+            marginal_dimensions = list(set(metric.marginal_dimensions(**opts) or []).difference(segment_by))
+            segment_by += marginal_dimensions
 
-        if dry_run:
-            return strategy
+            if metric.required_constraints(**opts):
+                required_constraints = Constraint.from_spec(metric.required_constraints(**opts))
+                if where is None:
+                    where = required_constraints
+                else:
+                    where = Constraint.from_spec(where) & required_constraints
 
-        result = metric.evaluate(strategy, marginal_dimensions, ir_only=ir_only, **opts)
+            strategy = self.measures.get_strategy(metric.unit_type, measures=measures, segment_by=segment_by, where=where, **opts.pop('measure_opts', {}))
 
-        if isinstance(result, pd.Series):
-            return MeasureSeries(result)
-        else:
-            return MeasureDataFrame(result)
+            yield strategy, marginal_dimensions, [metric]
