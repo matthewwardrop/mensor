@@ -104,6 +104,11 @@ class SequenceMap(object):
     def __len__(self):
         return len(self.__values)
 
+    def __eq__(self, other):
+        if not isinstance(other, SequenceMap):
+            return False
+        return set(self) == set(other)
+
     def __repr__(self):
         return '{{{}}}'.format(', '.join([v.__repr__() for v in self]))
 

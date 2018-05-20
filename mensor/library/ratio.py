@@ -92,7 +92,7 @@ class MeasureMetric(Metric):
         self.opts.add_option('measure', 'The measure to be extracted.', required=False, default=measure)
         self.opts.add_option('mean', 'Whether to take the mean of the measure over unit type.', required=False, default=mean)
 
-        self.implementations['sql'] = SimpleSQLMetricImplementation(metrics_callback=functools.partial(get_sql_measure_lines, self.name))
+        self.implementations['sql'] = SimpleSQLMetricImplementation(metrics_callback=functools.partial(get_sql_measure_lines, self.name, **self.opts.process()))
 
     def _required_measures(self, **opts):
         return [opts['measure']] + (['count'] if opts['mean'] else [])
@@ -110,7 +110,7 @@ class RatioMetric(Metric):
         self.opts.add_option('numerator', 'The numerator of the ratio.', required=False, default=numerator)
         self.opts.add_option('denominator', 'The denominator of the ratio.', required=False, default=denominator)
 
-        self.implementations['sql'] = SimpleSQLMetricImplementation(metrics_callback=functools.partial(get_sql_ratio_lines, self.name))
+        self.implementations['sql'] = SimpleSQLMetricImplementation(metrics_callback=functools.partial(get_sql_ratio_lines, self.name, **self.opts.process()))
 
     def _required_measures(self, **opts):
         return [opts['numerator'], opts['denominator']]

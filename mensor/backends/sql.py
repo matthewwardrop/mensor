@@ -381,11 +381,11 @@ class SQLMetricImplementation(MetricImplementation):
     def _is_compatible_with_strategy(self, strategy):
         return isinstance(strategy.provider, SQLMeasureProvider) and strategy.joins_all_compatible
 
-    def evaluate(self, strategy, marginalise=None, **opts):
-        ir = self.get_ir(strategy, marginalise=marginalise, **opts)
+    def evaluate(self, strategy, marginalise=None, compatible_metrics=None, **opts):
+        ir = self.get_ir(strategy, marginalise=marginalise, compatible_metrics=compatible_metrics, **opts)
         return strategy.provider.db_client.query(ir)
 
-    def get_ir(self, strategy, marginalise=None, **opts):
+    def get_ir(self, strategy, marginalise=None, compatible_metrics=None, **opts):
         return strategy.provider._template_environment.get_template(self.sql).render(
             measures=[m for m in strategy.measures if not m.private],
             segment_by=[d for d in strategy.segment_by if not d.private],
@@ -414,5 +414,16 @@ class SimpleSQLMetricImplementation(SQLMetricImplementation):
         SQLMetricImplementation.__init__(self, self.TEMPLATE)
         self.metrics_callback = metrics_callback
 
-    def get_ir(self, strategy, marginalise=None, **opts):
-        return SQLMetricImplementation.get_ir(self, strategy, marginalise=marginalise, metrics=self.metrics_callback(strategy, **opts), **opts)
+    def get_ir(self, strategy, marginalise=None, compatible_metrics=None, **opts):
+        metrics = self.metrics_callback(strategy, **opts)
+
+        for metric in (compatible_metrics or []):
+            impl = metric._implementation_for_strategy(strategy)
+            metrics.extend(impl.metrics_callback(strategy, **opts))
+
+        return SQLMetricImplementation.get_ir(self, strategy, marginalise=marginalise, metrics=metrics, **opts)
+
+    def _is_compatible_with_metric(self, metric):
+        if isinstance(metric, self.__class__):
+            return True
+        return False
