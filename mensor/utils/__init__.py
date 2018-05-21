@@ -1,3 +1,4 @@
+import copy
 import functools
 import logging
 import warnings
@@ -149,16 +150,37 @@ class Options(object):
                 print("    Note: Inputs are parsed and/or validated.")
 
     def copy(self):
-        return self.__class__(options=self._options.copy())
+        return self.__class__(options=copy.deepcopy(self._options))
 
-    def pin(self, **opts):
+    def update(self, opts, pinned=False):
         for name, value in opts.items():
             if name in self._options:
-                self._options[name]['pinned'] = True
+                self._options[name]['pinned'] = pinned
+                self._options[name]['required'] = False
                 self._options[name]['default'] = value
+        return self
+
+    def with_options(self, **opts):
+        return self.copy().update(opts)
 
     def with_pinned(self, **opts):
-        return self.copy().pin(**opts)
+        return self.copy().update(opts, pinned=True)
+
+    def __getattr__(self, name):
+        if name in self._options:
+            if self._options[name]['required']:
+                raise RuntimeError("No value specified for option '{}'".format(name))
+            else:
+                return self._options[name]['default']
+        raise AttributeError
+
+    def __setattr__(self, name, value):
+        if name in ['_options']:
+            object.__setattr__(self, name, value)
+        elif name in self._options:
+            self._options[name]['default'] = value
+        else:
+            raise AttributeError
 
 
 class OptionsMixin(object):
