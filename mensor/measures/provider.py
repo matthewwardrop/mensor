@@ -4,6 +4,7 @@ import pandas as pd
 
 from mensor.constraints import CONSTRAINTS, And, Constraint
 from mensor.utils import AttrDict, SequenceMap
+from mensor.utils.registry import SubclassRegisteringABCMeta
 
 from .types import (AGG_METHODS, Join, MeasureDataFrame, MeasureEvaluator,
                     MeasureSeries, _Dimension, _Measure,
@@ -12,7 +13,7 @@ from .types import (AGG_METHODS, Join, MeasureDataFrame, MeasureEvaluator,
 __all__ = ['MeasureProvider']
 
 
-class MeasureProvider(MeasureEvaluator):
+class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
     """
     This is the base class that provides the API contract for all data sources
     in the `mensor` universe. Every `MeasureProvider` instance is a proxy to

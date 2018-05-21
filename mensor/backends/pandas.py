@@ -13,6 +13,8 @@ class PandasMeasureProvider(MeasureProvider):
     # with pandas dataframes, and so some of the functionality of this class is
     # exposed as classmethods for use externally.
 
+    REGISTRY_KEYS = ['pandas']
+
     def __init__(self, name, data=None, data_transform=None, **kwargs):
         MeasureProvider.__init__(self, name, **kwargs)
         if isinstance(data, str):

@@ -8,6 +8,7 @@ from mensor.constraints import CONSTRAINTS
 from mensor.measures.provider import MeasureProvider
 from mensor.measures.types import AGG_METHODS
 from mensor.metrics.types import MetricImplementation
+from mensor.utils.registry import SubclassRegisteringABCMeta
 
 # TODO: Consider using sqlalchemy to generate SQL
 # TODO: Consider creating an option to produce SQL using WITH clauses
@@ -166,6 +167,7 @@ DIALECTS = {
 
 class SQLMeasureProvider(MeasureProvider):
 
+    REGISTRY_KEYS = ['sql']
     COLUMN_EXPR_PREAPPLIED = False
 
     def __init__(self, *args, sql=None, db_client=None, dialect='presto', **kwargs):
@@ -320,6 +322,7 @@ class SQLMeasureProvider(MeasureProvider):
 
 class SQLTableMeasureProvider(SQLMeasureProvider):
 
+    REGISTRY_KEYS = ['sql_table']
     COLUMN_EXPR_PREAPPLIED = True
 
     def _sql(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
