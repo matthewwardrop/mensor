@@ -271,7 +271,7 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
             where = Constraint.from_spec(where)
             joins = joins or []
             opts = self.opts.process(**opts)
-            return f(self, unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, stats=True, covariates=False, **opts)
+            return f(self, unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, stats=stats, covariates=covariates, **opts)
         return wrapped
 
     @_prepare_evaluation_args

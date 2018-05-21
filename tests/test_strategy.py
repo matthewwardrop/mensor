@@ -64,14 +64,15 @@ class EvaluationStrategyTests(unittest.TestCase):
         self.registry.register(transactions)
 
     def test_simple(self):
-        es = self.registry.evaluate('person', measures=['age'], segment_by=['name'], dry_run=True)
+        es = self.registry.get_strategy('person', measures=['age'], segment_by=['name'])
 
         self.assertIn('age', es.measures)
         self.assertIn('name', es.segment_by)
 
     def test_simple_where(self):
-        es = self.registry.evaluate('person', measures=['age'], segment_by=['name'],
-                                    where={'ds': '2018-01-01'}, dry_run=True)
+        es = self.registry.get_strategy(
+            'person', measures=['age'], segment_by=['name'], where={'ds': '2018-01-01'}
+        )
 
         self.assertIn('age', es.measures)
         self.assertIn('name', es.segment_by)
@@ -84,18 +85,17 @@ class EvaluationStrategyTests(unittest.TestCase):
         self.assertEqual(es.where.relation, '==')
 
     def test_requires_constraint_enforced(self):
-        es = self.registry.evaluate('transaction', measures=['value'], dry_run=True)
+        es = self.registry.get_strategy('transaction', measures=['value'])
         self.assertRaises(RuntimeError, es._check_constraints)
 
-        es = self.registry.evaluate('transaction', measures=['value'], where={'ds': '2018-01-01'}, dry_run=True)
+        es = self.registry.get_strategy('transaction', measures=['value'], where={'ds': '2018-01-01'})
         es._check_constraints()
 
     def test_multiple_providers_for_unit_type(self):
-        es = self.registry.evaluate(
+        es = self.registry.get_strategy(
             'person:seller',
             measures=['age'],
-            segment_by=['geography'],
-            dry_run=True
+            segment_by=['geography']
         )
 
         self.assertIn('age', es.measures)
@@ -114,15 +114,17 @@ class EvaluationStrategyTests(unittest.TestCase):
         self.assertIsNone(es.joins[0].join_prefix)
 
     def test_primary_key_requirement(self):
-        es = self.registry.evaluate('person', segment_by=['geography'], dry_run=True)
+        es = self.registry.get_strategy('person', segment_by=['geography'])
 
         self.assertEqual(len(es.joins), 1)
         self.assertEqual(es.joins[0].unit_type, 'person')
         self.assertEqual(set(es.joins[0].segment_by), {'person', 'geography', 'ds'})
 
     def test_forward_joins(self):
-        es = self.registry.evaluate('transaction', measures=['person:seller/age'], segment_by=['person:buyer/name'],
-                                    where={'*/ds': '2018-01-01'}, dry_run=True)
+        es = self.registry.get_strategy(
+            'transaction', measures=['person:seller/age'],
+            segment_by=['person:buyer/name'], where={'*/ds': '2018-01-01'}
+        )
 
         # Top-level strategy check
         self.assertIn('person:seller/age', es.measures)
@@ -151,8 +153,10 @@ class EvaluationStrategyTests(unittest.TestCase):
                 raise ValueError("Invalid unit type detected.")
 
     def test_reverse_joins(self):
-        es = self.registry.evaluate('person:seller', measures=['transaction/value'], segment_by=['name', 'person:seller'],
-                                    where={'*/ds': '2018-01-01'}, dry_run=True)
+        es = self.registry.get_strategy(
+            'person:seller', measures=['transaction/value'],
+            segment_by=['name', 'person:seller'], where={'*/ds': '2018-01-01'}
+        )
 
         self.assertIn('transaction/value', es.measures)
         self.assertFalse(es.measures['transaction/value'].private)
@@ -173,11 +177,10 @@ class EvaluationStrategyTests(unittest.TestCase):
         self.assertEqual({'person:seller', 'ds'}, set(rjoin.join_on_right))
 
     def test_automatic_aliasing(self):
-        es = self.registry.evaluate(
+        es = self.registry.get_strategy(
             'person:seller',
             measures=['transaction/value'],
-            segment_by=['person:seller'],
-            dry_run=True
+            segment_by=['person:seller']
         )
 
         self.assertIn('person:seller', es.segment_by)
