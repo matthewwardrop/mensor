@@ -79,6 +79,8 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
         self.measures = measures
         self.provisions = provisions
 
+        self.opts.add_option('context', 'A dictionary specifying runtime specified context.', required=False, default={})
+
     def _get_dimensions_from_specs(self, cls, specs):
         dims = SequenceMap()
         if specs is None:

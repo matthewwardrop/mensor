@@ -211,7 +211,7 @@ class SQLMeasureProvider(MeasureProvider):
 
         self.provides_measure('count', shared=True, distribution=None)
 
-        self._template_environment = jinja2.Environment(loader=jinja2.FunctionLoader(lambda x: x))
+        self._template_environment = jinja2.Environment(loader=jinja2.FunctionLoader(lambda x: x), undefined=jinja2.StrictUndefined)
         self._template_environment.filters.update({
             'col': self._col,
             'val': self._val
@@ -220,6 +220,7 @@ class SQLMeasureProvider(MeasureProvider):
     def _sql(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
         assert all(self._is_compatible_with(es.provider) and es.joins_all_compatible for es in self.provisions.values())
         return self._template_environment.get_template(self._base_sql).render(
+            **(opts['context'] or {}),
             **{
                 name: es.execute(ir_only=True, stats=False)
                 for name, es in self.provisions.items()
@@ -227,7 +228,7 @@ class SQLMeasureProvider(MeasureProvider):
         )
 
     def _evaluate(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
-        df = self.db_client.query(self.get_sql(
+        df = self.executor.query(self.get_sql(
             unit_type,
             measures=measures,
             segment_by=segment_by,
@@ -360,7 +361,8 @@ class SQLTableMeasureProvider(SQLMeasureProvider):
         if len(self.identifiers) + len(self.dimensions) + len(self.measures) == 0:
             raise RuntimeError("No columns identified in table.")
         return self._template_environment.get_template(self.dialect.TEMPLATE_TABLE).render(
-            table=self.name,
+            table=SQLMeasureProvider._sql(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts),
+            identifiers=None,
             measures=[m for m in measures if m != 'count' and not m.external],
             dimensions=[d for d in segment_by if not d.external and d not in measures],
         )
