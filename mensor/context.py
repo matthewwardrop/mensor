@@ -21,6 +21,14 @@ class EvaluationContext(object):
         return self.metrics.measures
 
     @property
+    def context(self):
+        return getattr(self, '_context', {})
+
+    @context.setter
+    def context(self, context):
+        self._context = context
+
+    @property
     def constraints(self):
         return getattr(self, '_constraints', NullConstraint())
 
@@ -30,10 +38,10 @@ class EvaluationContext(object):
 
     def evaluate(self, *args, where=None, **kwargs):
         return self.metrics.evaluate(
-            *args, where=self.constraints & Constraint.from_spec(where), **kwargs
+            *args, where=self.constraints & Constraint.from_spec(where), context=self.context, **kwargs
         )
 
     def evaluate_measures(self, *args, where=None, **kwargs):
         return self.metrics.measures.evaluate(
-            *args, where=self.constraints & Constraint.from_spec(where), **kwargs
+            *args, where=self.constraints & Constraint.from_spec(where), context=self.context, **kwargs
         )
