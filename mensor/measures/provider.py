@@ -1,6 +1,8 @@
 import itertools
+import os
 
 import pandas as pd
+import yaml
 
 from mensor.constraints import CONSTRAINTS, And, Constraint
 from mensor.utils import AttrDict, SequenceMap
@@ -68,6 +70,29 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
     `MeasureRegistry`s. Once registered, the registry can evaluate measures
     transparently across all `MeasureProvider`s, handling the joins as necessary.
     """
+
+    @classmethod
+    def from_yaml(cls, yml):
+        if '\n' not in yml:
+            with open(os.path.expanduser(yml)) as f:
+                return cls.from_dict(yaml.load(f))
+        else:
+            return cls.from_dict(yaml.loads(yml))
+
+    @classmethod
+    def from_dict(cls, d):
+        assert 'kind' in d
+        assert d.get('role') in (None, 'provider')
+        klass = cls.for_kind(d['kind'])
+        instance = klass(
+            name=d.get('name'),
+            identifiers=d.get('identifiers'),
+            measures=d.get('measures'),
+            dimensions=d.get('dimensions'),
+            provisions=d.get('provisions'),
+            **d.get('opts', {})
+        )
+        return instance
 
     def __init__(self, name=None, *, identifiers=None, measures=None, dimensions=None,
                  provisions=None):

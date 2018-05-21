@@ -1,6 +1,8 @@
+import os
 from collections import Counter
 
 from ..utils import nested_dict_copy, SequenceMap
+from .provider import MeasureProvider
 from .strategy import EvaluationStrategy
 from .types import (MeasureEvaluator, Provision, _ProvidedFeature,
                     _ResolvedFeature)
@@ -136,6 +138,19 @@ class MeasureRegistry(MeasureEvaluator):
         cache.register(provider)
         # Committing cache
         self._cache = cache
+
+    def register_from_yaml(self, path_or_yaml):
+        if '\n' in path_or_yaml or not os.path.isdir(os.path.expanduser(path_or_yaml)):
+            return self.register(MeasureProvider.from_yaml(path_or_yaml))
+        else:
+            for dirpath, dirnames, filenames in os.walk(os.path.expanduser(path_or_yaml)):
+                for filename in filenames:
+                    if filename.endswith('.yml'):
+                        try:
+                            provider = MeasureProvider.from_yaml(os.path.join(dirpath, filename))
+                            self.register(provider)
+                        except AssertionError:
+                            pass
 
     def unregister(self, provider_name):
         provider = self._providers.pop(provider_name)

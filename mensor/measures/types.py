@@ -284,6 +284,8 @@ class _ProvidedFeature(_FeatureAttrsMixin):
 
     @classmethod
     def from_spec(cls, spec, provider=None):
+        if isinstance(spec, str):
+            spec = {'name': spec}
         if isinstance(spec, cls):
             spec.provider = provider
             return spec

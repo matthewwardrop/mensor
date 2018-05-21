@@ -6,6 +6,7 @@ __author_email__ = 'mpwardrop@gmail.com'
 
 __dependencies__ = [
     'pandas',
+    'pyyaml',
     'uncertainties',
     'six',
     'numpy',
