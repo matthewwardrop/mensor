@@ -165,18 +165,49 @@ DIALECTS = {
 }
 
 
+class SQLExecutor(metaclass=SubclassRegisteringABCMeta):
+
+    REGISTRY_KEYS = None
+
+    @property
+    def dialect(self):
+        return None
+
+    def query(self, sql):
+        raise NotImplementedError
+
+
+class DebugSQLExecutor(SQLExecutor):
+
+    REGISTRY_KEYS = ['debug']
+
+    @property
+    def dialect(self):
+        return 'presto'
+
+    def query(self, sql):
+        print(sql)
+        raise NotImplementedError("This SQLExecutor goes no further.")
+
+
 class SQLMeasureProvider(MeasureProvider):
 
     REGISTRY_KEYS = ['sql']
     COLUMN_EXPR_PREAPPLIED = False
 
-    def __init__(self, *args, sql=None, db_client=None, dialect='presto', **kwargs):
-        assert db_client is not None, "Must specify an (Omniduct-compatible) database client."
+    def __init__(self, *args, sql=None, executor=None, **kwargs):
+
+        if not executor:
+            executor = DebugSQLExecutor()
+        elif isinstance(executor, str):
+            executor = SQLExecutor.for_kind(executor)()
+        elif issubclass(executor, SQLExecutor):
+            executor = executor()
 
         MeasureProvider.__init__(self, *args, **kwargs)
         self._base_sql = textwrap.dedent(sql).strip() if sql else None
-        self.db_client = db_client
-        self.dialect = DIALECTS[dialect]
+        self.executor = executor
+        self.dialect = DIALECTS[executor.dialect]
 
         self.provides_measure('count', shared=True, distribution=None)
 
