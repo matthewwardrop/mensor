@@ -37,6 +37,7 @@ class Metric(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
 
     def _process_opts(f):
         signature = inspect.getfullargspec(f).args
+
         def wrapped(self, *args, **opts):
             base_args = {}
             for opt in list(opts):
@@ -44,6 +45,7 @@ class Metric(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
                     base_args[opt] = opts.pop(opt)
             opts = self.opts.process(**opts)
             return f(self, *args, **base_args, **opts)
+
         return wrapped
 
     def __init__(self, name, unit_type=None, desc=None, **kwargs):
