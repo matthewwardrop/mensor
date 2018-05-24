@@ -1,3 +1,5 @@
+import os
+
 import pandas as pd
 
 from mensor.constraints import Constraint
@@ -17,18 +19,41 @@ class MetricRegistry(object):
         assert isinstance(metric, Metric), "Metrics must be instances of `Metric`."
         self._metrics[metric.name] = metric
 
+    def register_from_yaml(self, path_or_yaml):
+        if '\n' in path_or_yaml or not os.path.isdir(os.path.expanduser(path_or_yaml)):
+            return self.register(Metric.from_yaml(path_or_yaml))
+        else:
+            for dirpath, dirnames, filenames in os.walk(os.path.expanduser(path_or_yaml)):
+                for filename in filenames:
+                    if filename.endswith('.yml'):
+                        try:
+                            provider = Metric.from_yaml(os.path.join(dirpath, filename))
+                            self.register(provider)
+                        except AssertionError:
+                            pass
+
     def unregister(self, name):
         del self._metrics[name]
 
-    def evaluate(self, metrics, segment_by=None, where=None, dry_run=False, ir_only=False, **opts):
+    def evaluate(self, metrics, segment_by=None, where=None, **opts):
+        """
+        Parameters:
+            metrics (str, list<str): A metric (or list of metrics) to evaluate.
+            segment_by (str, list<str>): A dimension or list of dimensions by which
+                to segment the metric aggregation.
+            where (dict, BaseConstraint): A representation of the constraints to
+                apply during this evaluation.
+            opts (dict): Additional options to pass through to the metric
+                evaluation process.
+        """
 
         results = []
 
         if isinstance(metrics, str):
             metrics = [metrics]
 
-        for strategy, marginal_dimensions, metrics in self._group_metric_evaluations(metrics=metrics, segment_by=segment_by, where=where, **opts):
-            result = metrics[0].evaluate(strategy, marginal_dimensions, compatible_metrics=metrics[1:])
+        for strategy, marginal_dimensions, metrics in self._group_metric_evaluations(metrics=metrics, segment_by=segment_by, where=where):
+            result = metrics[0].evaluate(strategy, marginal_dimensions, compatible_metrics=metrics[1:], **opts)
 
             if isinstance(result, pd.Series):
                 result = MeasureSeries(result)
@@ -40,15 +65,15 @@ class MetricRegistry(object):
         return pd.concat([result.set_index(segment_by) for result in results], axis=1)
 
     def get_ir(self, metrics, segment_by=None, where=None, dry_run=False, **opts):
-        for strategy, marginal_dimensions, metrics in self._group_metric_evaluations(metrics=metrics, segment_by=segment_by, where=where, **opts):
+        for strategy, marginal_dimensions, metrics in self._group_metric_evaluations(metrics=metrics, segment_by=segment_by, where=where):
             return metrics[0].get_ir(strategy, marginal_dimensions, compatible_metrics=metrics[1:])
 
-    def _get_strategy_for_metric(self, metric, segment_by, where, **opts):
+    def _get_strategy_for_metric(self, metric, segment_by, where):
         measures = metric.required_measures
         if metric.required_segmentation:
-            segment_by += list(set(metric.required_segmentation).difference(segment_by))
+            segment_by = segment_by + list(set(metric.required_segmentation).difference(segment_by))
         marginal_dimensions = list(set(metric.marginal_dimensions or []).difference(segment_by))
-        segment_by += marginal_dimensions
+        segment_by = segment_by + marginal_dimensions
 
         if metric.required_constraints:
             required_constraints = Constraint.from_spec(metric.required_constraints)
@@ -61,8 +86,7 @@ class MetricRegistry(object):
             metric.unit_type,
             measures=measures,
             segment_by=segment_by,
-            where=where,
-            **opts
+            where=where
         )
 
     def _group_metric_evaluations(self, metrics, segment_by, where, **opts):
@@ -134,6 +158,6 @@ class MetricRegistry(object):
                     offset -= 1
 
             strategy = strategy_for_metrics(compatible)
-            marginal_dimensions = set(strategy.segment_by).difference(segment_by)
+            marginal_dimensions = set(strategy.segment_by).difference(segment_by)  # Todo: check case when required_dimensions is not empty
 
             yield strategy_for_metrics(compatible), marginal_dimensions, compatible

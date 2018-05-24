@@ -1,11 +1,39 @@
 import inspect
+import os
 from abc import ABCMeta, abstractmethod, abstractproperty
 from collections import OrderedDict
 
+import yaml
+
 from mensor.utils import OptionsMixin
+from mensor.utils.registry import SubclassRegisteringABCMeta
 
 
-class Metric(OptionsMixin, metaclass=ABCMeta):
+class Metric(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
+    """
+    This is the base class of all Metric implementations inside of Mensor.
+    """
+
+    @classmethod
+    def from_yaml(cls, yml):
+        if '\n' not in yml:
+            with open(os.path.expanduser(yml)) as f:
+                return cls.from_dict(yaml.load(f))
+        else:
+            return cls.from_dict(yaml.loads(yml))
+
+    @classmethod
+    def from_dict(cls, d):
+        assert 'kind' in d
+        assert d.get('role') in (None, 'metric')
+        klass = cls.for_kind(d['kind'])
+        instance = klass(
+            name=d.get('name'),
+            unit_type=d.get('unit_type'),
+            desc=d.get('desc'),
+            **d.get('opts')
+        )
+        return instance
 
     def _process_opts(f):
         signature = inspect.getfullargspec(f).args
@@ -25,6 +53,8 @@ class Metric(OptionsMixin, metaclass=ABCMeta):
 
         self.implementations = OrderedDict()
 
+        self.opts.add_option('name', 'The name of the metric', False, default=name)
+        self.opts.add_option('measure_opts', 'Additional options to pass through to measures.', False, default={})
         self.opts.add_option('implementation', "The implementation to use to evaluate the metrics.", False)
 
         self._init(**kwargs)
@@ -75,22 +105,27 @@ class Metric(OptionsMixin, metaclass=ABCMeta):
                 return True
         return False
 
-    @_process_opts
     def evaluate(self, strategy, marginalise=None, compatible_metrics=None, **opts):
         # TODO: Check that strategy has required measures, segmentation and constraints.
-        print(compatible_metrics)
         implementation = self._implementation_for_strategy(strategy)
-        return implementation.evaluate(strategy, marginalise=marginalise,
-                                       compatible_metrics=compatible_metrics, **opts)
+        return implementation.evaluate(
+            strategy,
+            marginalise=marginalise,
+            compatible_metrics=compatible_metrics,
+            **self.opts.process(**opts)
+        )
 
-    @_process_opts
     def get_ir(self, strategy, marginalise=None, compatible_metrics=None, **opts):
         implementation = self._implementation_for_strategy(strategy)
-        return implementation.get_ir(strategy, marginalise=marginalise,
-                                     compatible_metrics=compatible_metrics, **opts)
+        return implementation.get_ir(
+            strategy,
+            marginalise=marginalise,
+            compatible_metrics=compatible_metrics,
+            **self.opts.process(**opts)
+        )
 
 
-class MetricImplementation(metaclass=ABCMeta):
+class MetricImplementation(metaclass=SubclassRegisteringABCMeta):
 
     @abstractmethod
     def evaluate(self, strategy, marginalise=None, compatible_metrics=None, **opts):

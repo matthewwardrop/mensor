@@ -370,6 +370,8 @@ class SQLTableMeasureProvider(SQLMeasureProvider):
 
 class SQLMetricImplementation(MetricImplementation):
 
+    REGISTRY_KEYS = ['sql']
+
     def __init__(self, sql, post_stats=True):
         self._sql = textwrap.dedent(sql) if sql else sql
         self.post_stats = post_stats
@@ -383,28 +385,33 @@ class SQLMetricImplementation(MetricImplementation):
 
     def evaluate(self, strategy, marginalise=None, compatible_metrics=None, **opts):
         ir = self.get_ir(strategy, marginalise=marginalise, compatible_metrics=compatible_metrics, **opts)
-        return strategy.provider.db_client.query(ir)
+        return strategy.provider.executor.query(ir)
 
     def get_ir(self, strategy, marginalise=None, compatible_metrics=None, **opts):
         return strategy.provider._template_environment.get_template(self.sql).render(
             measures=[m for m in strategy.measures if not m.private],
             segment_by=[d for d in strategy.segment_by if not d.private],
             marginalise=marginalise or [],
-            provision=strategy.execute(ir_only=True, stats=self.post_stats),
+            provision=strategy.execute(ir_only=True, stats=self.post_stats, **opts.pop('measure_opts', {})),
             **opts
         )
 
 
 class SimpleSQLMetricImplementation(SQLMetricImplementation):
 
+    REGISTRY_KEYS = ['sql_simple']
+
     TEMPLATE = """
         SELECT
+            {%- with ns=namespace(_cnt=0) %}
             {%- for dimension in segment_by if dimension not in marginalise and not dimension.private %}
-            {% if loop.index0 > 0 %}, {% endif %}{{dimension.via_name}}
+            {% if loop.index0 > 0 %}, {% endif %}{{ dimension.via_name }}
+            {%- set ns._cnt = ns._cnt + 1 %}
             {%- endfor %}
             {%- for metric in metrics %}
-            {% if segment_by|length > 0 or loop.index0 > 0 %}, {% endif %}{{metric}}
+            {% if ns._cnt > 0 or loop.index0 > 0 %}, {% endif %}{{ metric }}
             {%- endfor %}
+            {%- endwith %}
         FROM (
             {{ provision | indent(width=8) }}
         )
@@ -415,11 +422,11 @@ class SimpleSQLMetricImplementation(SQLMetricImplementation):
         self.metrics_callback = metrics_callback
 
     def get_ir(self, strategy, marginalise=None, compatible_metrics=None, **opts):
-        metrics = self.metrics_callback(strategy, **opts)
+        metrics = self.metrics_callback(strategy=strategy, **opts)
 
         for metric in (compatible_metrics or []):
             impl = metric._implementation_for_strategy(strategy)
-            metrics.extend(impl.metrics_callback(strategy, **opts))
+            metrics.extend(impl.metrics_callback(strategy=strategy, **opts))
 
         return SQLMetricImplementation.get_ir(self, strategy, marginalise=marginalise, metrics=metrics, **opts)
 
