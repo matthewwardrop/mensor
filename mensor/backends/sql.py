@@ -364,7 +364,7 @@ class SQLTableMeasureProvider(SQLMeasureProvider):
             table=SQLMeasureProvider._sql(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts),
             identifiers=None,
             measures=[m for m in measures if m != 'count' and not m.external],
-            dimensions=[d for d in segment_by if not d.external and d not in measures],
+            dimensions=[d for d in segment_by if not d.external],
         )
 
 

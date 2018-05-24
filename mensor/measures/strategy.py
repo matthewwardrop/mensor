@@ -203,7 +203,8 @@ class EvaluationStrategy(object):
         for join in self.joins:
             joins.append(join.execute(
                 as_join=True,
-                compatible=join.provider._is_compatible_with(self.provider)
+                compatible=join.provider._is_compatible_with(self.provider),
+                **opts
             ))
 
         # Step 2: Evaluate provider
@@ -385,13 +386,13 @@ class EvaluationStrategy(object):
         for sub_strategy in evaluations[1:]:
             strategy.add_join(unit_type, sub_strategy)
 
-        strategy.where = And.from_operands(strategy.where, where.scoped_applicable)
+        strategy.where = And.from_operands(strategy.where, where.scoped_for_unit_type(unit_type))
 
         # Step 4: Mark any resolved where dependencies as private, unless otherwise
         # requested in `segment_by`
 
         for dimension in strategy.segment_by:
-            if dimension.implicit and dimension in where.scoped_applicable.dimensions:
+            if dimension.implicit and dimension in where.scoped_for_unit_type(unit_type).dimensions:
                 strategy.segment_by[dimension] = strategy.segment_by[dimension].as_private
 
         # Step 5: Return EvaluationStrategy, and profit.

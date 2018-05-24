@@ -401,7 +401,7 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
 
             result = PandasMeasureProvider._finalise_dataframe(
                 df=result, measures=measures_post, segment_by=segment_by_post,
-                where=where_post, stats=stats, reagg=True
+                where=where_post, stats=stats, unit_agg=False, reagg=False
             )
 
         if isinstance(result, pd.Series):
