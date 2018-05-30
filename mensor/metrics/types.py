@@ -5,6 +5,7 @@ from collections import OrderedDict
 
 import yaml
 
+from mensor.constraints import Constraint, NullConstraint
 from mensor.utils import OptionsMixin
 from mensor.utils.registry import SubclassRegisteringABCMeta
 
@@ -20,7 +21,7 @@ class Metric(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
             with open(os.path.expanduser(yml)) as f:
                 return cls.from_dict(yaml.load(f))
         else:
-            return cls.from_dict(yaml.loads(yml))
+            return cls.from_dict(yaml.load(yml))
 
     @classmethod
     def from_dict(cls, d):
@@ -35,25 +36,12 @@ class Metric(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
         )
         return instance
 
-    def _process_opts(f):
-        signature = inspect.getfullargspec(f).args
-
-        def wrapped(self, *args, **opts):
-            base_args = {}
-            for opt in list(opts):
-                if opt in signature:
-                    base_args[opt] = opts.pop(opt)
-            opts = self.opts.process(**opts)
-            return f(self, *args, **base_args, **opts)
-
-        return wrapped
-
     def __init__(self, name, unit_type=None, desc=None, **kwargs):
         self.name = name
         self.unit_type = unit_type
         self.desc = desc
 
-        self.implementations = OrderedDict()
+        self._implementations = []
 
         self.opts.add_option('name', 'The name of the metric', False, default=name)
         self.opts.add_option('measure_opts', 'Additional options to pass through to measures.', False, default={})
@@ -64,52 +52,51 @@ class Metric(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
     def _init(self, **kwargs):
         pass
 
-    @property
-    def required_measures(self):
-        return self._required_measures(**self.opts.process())
-
-    @abstractmethod
-    def _required_measures(self, **opts):
-        raise NotImplementedError
+    # Implementation Management
 
     @property
-    def required_segmentation(self):
-        return self._required_segmentation(**self.opts.process())
+    def implementations(self):
+        return self._implementations
 
-    @abstractmethod
-    def _required_segmentation(self, **opts):
-        raise NotImplementedError
+    def add_implementation(self, implementation):
+        self._implementations.append(implementation.register_for_metric(self))
+        return self
 
-    @property
-    def required_constraints(self):
-        return self._required_constraints(**self.opts.process())
-
-    @abstractmethod
-    def _required_constraints(self, **opts):
-        raise NotImplementedError
-
-    @property
-    def marginal_dimensions(self):
-        return self._marginal_dimensions(**self.opts.process())
-
-    def _marginal_dimensions(self, **opts):
-        return []
-
-    def _implementation_for_strategy(self, strategy):
-        for implementation in self.implementations.values():
+    def implementation_for_strategy(self, strategy):
+        for implementation in self.implementations:
             if implementation._is_compatible_with_strategy(strategy):
                 return implementation
         raise RuntimeError("No valid implementation for strategy.")
 
     def _is_compatible_with(self, strategy):
-        for implementation in self.implementations.values():
+        for implementation in self.implementations:
             if implementation._is_compatible_with_strategy(strategy):
                 return True
         return False
 
+    # Manage requirements from measure registry
+
+    @abstractproperty
+    def required_measures(self):
+        raise NotImplementedError
+
+    @property
+    def required_segmentation(self):
+        return []
+
+    @property
+    def required_marginal_segmentation(self):
+        return []
+
+    @property
+    def required_constraints(self):
+        return NullConstraint()
+
+    # Metric evaluation
+
     def evaluate(self, strategy, marginalise=None, compatible_metrics=None, **opts):
         # TODO: Check that strategy has required measures, segmentation and constraints.
-        implementation = self._implementation_for_strategy(strategy)
+        implementation = self.implementation_for_strategy(strategy)
         return implementation.evaluate(
             strategy,
             marginalise=marginalise,
@@ -118,7 +105,7 @@ class Metric(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
         )
 
     def get_ir(self, strategy, marginalise=None, compatible_metrics=None, **opts):
-        implementation = self._implementation_for_strategy(strategy)
+        implementation = self.implementation_for_strategy(strategy)
         return implementation.get_ir(
             strategy,
             marginalise=marginalise,
@@ -127,7 +114,54 @@ class Metric(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
         )
 
 
+class CustomMetric(Metric):
+
+    def _init(self):
+        self._required_measures = []
+        self._required_segmentation = []
+        self._required_marginal_segmentation = []
+        self._required_constraints = NullConstraint()
+
+    @property
+    def required_measures(self):
+        return self._required_measures
+
+    def require_measures(self, *measures):
+        self._required_measures.extend(measures)
+        return self
+
+    @property
+    def required_segmentation(self):
+        return self._required_segmentation
+
+    def require_segmentation(self, *dimensions):
+        self._required_segmentation.extend(dimensions)
+        return self
+
+    @property
+    def required_marginal_segmentation(self):
+        return self._required_marginal_segmentation
+
+    def require_marginal_segmentation(self, *dimensions):
+        self._required_marginal_segmentation.extend(dimensions)
+        return self
+
+    @property
+    def required_constraints(self):
+        return self._required_constraints
+
+    def require_constraints(self, **constraints):
+        self._required_constraints &= Constraint.from_spec(constraints)
+        return self
+
+
 class MetricImplementation(metaclass=SubclassRegisteringABCMeta):
+
+    REGISTRY_KEYS = None
+
+    def register_for_metric(self, metric):
+        self.metric = metric
+        return self
 
     @abstractmethod
     def evaluate(self, strategy, marginalise=None, compatible_metrics=None, **opts):

@@ -49,11 +49,16 @@ class MetricRegistry(object):
 
         results = []
 
-        if isinstance(metrics, str):
-            metrics = [metrics]
+        metrics = [] if metrics is None else metrics
+        segment_by = [] if segment_by is None else segment_by
 
-        for strategy, marginal_dimensions, metrics in self._group_metric_evaluations(metrics=metrics, segment_by=segment_by, where=where):
-            result = metrics[0].evaluate(strategy, marginal_dimensions, compatible_metrics=metrics[1:], **opts)
+        if not isinstance(metrics, list):
+            metrics = [metrics]
+        if not isinstance(segment_by, list):
+            segment_by = [segment_by]
+
+        for strategy, required_marginal_segmentation, metrics in self._group_metric_evaluations(metrics=metrics, segment_by=segment_by, where=where):
+            result = metrics[0].evaluate(strategy, required_marginal_segmentation, compatible_metrics=metrics[1:], **opts)
 
             if isinstance(result, pd.Series):
                 result = MeasureSeries(result)
@@ -62,18 +67,21 @@ class MetricRegistry(object):
 
             results.append(result)
 
-        return pd.concat([result.set_index(segment_by) for result in results], axis=1)
+        if len(segment_by):
+            return pd.concat([result.set_index(segment_by) for result in results], axis=1)
+        else:
+            return pd.concat(results, axis=1)
 
     def get_ir(self, metrics, segment_by=None, where=None, dry_run=False, **opts):
-        for strategy, marginal_dimensions, metrics in self._group_metric_evaluations(metrics=metrics, segment_by=segment_by, where=where):
-            return metrics[0].get_ir(strategy, marginal_dimensions, compatible_metrics=metrics[1:])
+        for strategy, required_marginal_segmentation, metrics in self._group_metric_evaluations(metrics=metrics, segment_by=segment_by, where=where):
+            return metrics[0].get_ir(strategy, required_marginal_segmentation, compatible_metrics=metrics[1:])
 
     def _get_strategy_for_metric(self, metric, segment_by, where):
         measures = metric.required_measures
         if metric.required_segmentation:
             segment_by = segment_by + list(set(metric.required_segmentation).difference(segment_by))
-        marginal_dimensions = list(set(metric.marginal_dimensions or []).difference(segment_by))
-        segment_by = segment_by + marginal_dimensions
+        required_marginal_segmentation = list(set(metric.required_marginal_segmentation or []).difference(segment_by))
+        segment_by = segment_by + required_marginal_segmentation
 
         if metric.required_constraints:
             required_constraints = Constraint.from_spec(metric.required_constraints)
@@ -91,7 +99,7 @@ class MetricRegistry(object):
 
     def _group_metric_evaluations(self, metrics, segment_by, where, **opts):
 
-        metrics = [self._metrics[metric] for metric in metrics]
+        metrics = [self._metrics[metric] if not isinstance(metric, Metric) else metric for metric in metrics]
         strategies = {metric: self._get_strategy_for_metric(metric, segment_by, where, **opts) for metric in metrics}
 
         def is_compatible(metric1, metric2):
@@ -99,12 +107,11 @@ class MetricRegistry(object):
             strategy2 = strategies[metric2]
 
             for field in ['unit_type', 'segment_by', 'where']:
-                print(getattr(strategy1, field), getattr(strategy2, field))
                 if getattr(strategy1, field) != getattr(strategy2, field):
                     return False
 
-            implementation1 = metric1._implementation_for_strategy(strategy1)
-            implementation2 = metric2._implementation_for_strategy(strategy2)
+            implementation1 = metric1.implementation_for_strategy(strategy1)
+            implementation2 = metric2.implementation_for_strategy(strategy2)
 
             return implementation1._is_compatible_with_metric(implementation2)
 
@@ -158,6 +165,6 @@ class MetricRegistry(object):
                     offset -= 1
 
             strategy = strategy_for_metrics(compatible)
-            marginal_dimensions = set(strategy.segment_by).difference(segment_by)  # Todo: check case when required_dimensions is not empty
+            required_marginal_segmentation = set(strategy.segment_by).difference(segment_by)  # Todo: check case when required_dimensions is not empty
 
-            yield strategy_for_metrics(compatible), marginal_dimensions, compatible
+            yield strategy_for_metrics(compatible), required_marginal_segmentation, compatible

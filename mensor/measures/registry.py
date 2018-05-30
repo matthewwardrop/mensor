@@ -216,6 +216,7 @@ class MeasureRegistry(MeasureEvaluator):
         unit_type = self.identifier_for_unit(unit_type)
         via = ''
         attrs = {}
+        eff_unit_type = unit_type
 
         if isinstance(feature, (_ResolvedFeature, _ProvidedFeature)):
             attrs = feature.attrs
@@ -229,7 +230,6 @@ class MeasureRegistry(MeasureEvaluator):
                 s = s[1:]
             via_suffix = '/'.join(s[:-1])
             feature = s[-1]
-            eff_unit_type = unit_type
             if via_suffix:
                 eff_unit_type = self.identifier_for_unit(s[-2])
                 via += ('/' + via_suffix) if via else via_suffix

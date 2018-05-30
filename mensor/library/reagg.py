@@ -12,7 +12,7 @@ class RenormReaggMetric(Metric):
         self.opts.add_option('renormalise_over', '...', required=False, default=renormalise_over)
         self.opts.add_option('window_dimensions', '...', required=False, default=window_dimensions)
 
-        self.implementations['sql'] = (
+        self.add_implementation(
             SQLMetricImplementation(
                 """
                 SELECT
@@ -49,14 +49,12 @@ class RenormReaggMetric(Metric):
             )
         )
 
-    def _required_measures(self, **opts):
-        return [opts['measure']]
+    @property
+    def required_measures(self):
+        return [self.opts['measure']]
 
-    def _required_segmentation(self, **opts):
-        return []
+    @property
+    def required_marginal_segmentation(self, **opts):
+        return self.opts['renormalise_over'] + self.opts['window_dimensions']
 
-    def _required_constraints(self, **opts):
-        return []
 
-    def _marginal_dimensions(self, **opts):
-        return opts['renormalise_over'] + opts['window_dimensions']

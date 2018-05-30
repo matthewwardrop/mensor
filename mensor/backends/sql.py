@@ -425,8 +425,8 @@ class SimpleSQLMetricImplementation(SQLMetricImplementation):
         metrics = self.metrics_callback(strategy=strategy, **opts)
 
         for metric in (compatible_metrics or []):
-            impl = metric._implementation_for_strategy(strategy)
-            metrics.extend(impl.metrics_callback(strategy=strategy, **opts))
+            impl = metric.implementation_for_strategy(strategy)
+            metrics.extend(impl.metrics_callback(strategy=strategy, **impl.metric.opts.process()))
 
         return SQLMetricImplementation.get_ir(self, strategy, marginalise=marginalise, metrics=metrics, **opts)
 

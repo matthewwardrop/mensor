@@ -1,5 +1,6 @@
 import copy
 import functools
+import inspect
 import logging
 import warnings
 from collections import OrderedDict
@@ -175,8 +176,7 @@ class Options(object):
         if name in self._options:
             if self._options[name]['required']:
                 raise RuntimeError("No value specified for option '{}'".format(name))
-            else:
-                return self._options[name]['default']
+            return self._options[name]['default']
         raise AttributeError
 
     def __setattr__(self, name, value):
@@ -186,6 +186,19 @@ class Options(object):
             self._options[name]['default'] = value
         else:
             raise AttributeError
+
+    def __getitem__(self, name):
+        if name in self._options:
+            if self._options[name]['required']:
+                raise RuntimeError("No value specified for option '{}'".format(name))
+            return self._options[name]['default']
+        raise KeyError
+
+    def __setitem__(self, name, value):
+        if name in self._options:
+            self._options[name]['default'] = value
+        raise KeyError
+
 
 
 class OptionsMixin(object):
@@ -204,3 +217,17 @@ class OptionsMixin(object):
             if not isinstance(opts, Options):
                 raise ValueError("`opts` must be of type `mensor.utils.Options`.")
             self.__opts = opts
+
+
+def with_opts_processed(f):
+    signature = inspect.getfullargspec(f).args
+
+    def wrapped(self, *args, **opts):
+        base_args = {}
+        for opt in list(opts):
+            if opt in signature:
+                base_args[opt] = opts.pop(opt)
+        opts = self.opts.process(**opts)
+        return f(self, *args, **base_args, **opts)
+
+    return wrapped

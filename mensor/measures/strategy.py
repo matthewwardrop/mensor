@@ -283,6 +283,11 @@ class EvaluationStrategy(object):
         measures = [] if measures is None else measures
         segment_by = [] if segment_by is None else segment_by
 
+        if not isinstance(measures, list):
+            measures = [measures]
+        if not isinstance(segment_by, list):
+            segment_by = [segment_by]
+
         measures = [
             registry.resolve(unit_type, measure, role='measure') for measure in measures
         ]
