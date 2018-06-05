@@ -70,8 +70,16 @@ class MetricRegistry(object):
             return pd.concat([result.raw for result in results], axis=1)
 
     def get_ir(self, metrics, segment_by=None, where=None, dry_run=False, **opts):
+        metrics = [] if metrics is None else metrics
+        segment_by = [] if segment_by is None else segment_by
+
+        if not isinstance(metrics, list):
+            metrics = [metrics]
+        if not isinstance(segment_by, list):
+            segment_by = [segment_by]
+
         for strategy, required_marginal_segmentation, metrics in self._group_metric_evaluations(metrics=metrics, segment_by=segment_by, where=where):
-            return metrics[0].get_ir(strategy, required_marginal_segmentation, compatible_metrics=metrics[1:])
+            yield metrics, metrics[0].get_ir(strategy, required_marginal_segmentation, compatible_metrics=metrics[1:], **opts)
 
     def _get_strategy_for_metric(self, metric, segment_by, where):
         measures = metric.required_measures
@@ -99,69 +107,77 @@ class MetricRegistry(object):
         metrics = [self._metrics[metric] if not isinstance(metric, Metric) else metric for metric in metrics]
         strategies = {metric: self._get_strategy_for_metric(metric, segment_by, where, **opts) for metric in metrics}
 
-        def is_compatible(metric1, metric2):
-            strategy1 = strategies[metric1]
-            strategy2 = strategies[metric2]
+        for metric in metrics:
+            strategy = strategies[metric]
+            required_marginal_segmentation = set(strategy.segment_by).difference(segment_by)
+            yield strategy, required_marginal_segmentation, [metric]
 
-            for field in ['unit_type', 'segment_by', 'where']:
-                if getattr(strategy1, field) != getattr(strategy2, field):
-                    return False
-
-            implementation1 = metric1.implementation_for_strategy(strategy1)
-            implementation2 = metric2.implementation_for_strategy(strategy2)
-
-            return implementation1._is_compatible_with_metric(implementation2)
-
-        def strategy_for_metrics(metrics):
-            unit_type = None
-            measures = []
-            segment_by = None
-            where = None
-
-            for metric in metrics:
-                if unit_type is None:
-                    unit_type = strategies[metric].unit_type
-                else:
-                    assert unit_type == strategies[metric].unit_type
-
-                for measure in strategies[metric].measures:
-                    if measure not in measures:
-                        measures.append(measure)
-
-                if segment_by is None:
-                    segment_by = list(strategies[metric].segment_by)
-                else:
-                    assert set(segment_by) == set(list(strategies[metric].segment_by))
-
-                if where is None:
-                    where = strategies[metric].where
-                else:
-                    assert where == strategies[metric].where
-
-            return self.measures.get_strategy(
-                unit_type=unit_type,
-                measures=measures,
-                segment_by=segment_by,
-                where=where
-            )
-
-        if segment_by is None:
-            segment_by = []
-        if not isinstance(segment_by, list):
-            segment_by = [segment_by]
-
-        offset = 0
-        while len(metrics) > 0:
-            metric = metrics.pop(0)
-            compatible = [metric]
-
-            for i, other in enumerate(metrics[:]):
-                if is_compatible(metric, other):
-                    compatible.append(other)
-                    metrics.pop(i + offset)
-                    offset -= 1
-
-            strategy = strategy_for_metrics(compatible)
-            required_marginal_segmentation = set(strategy.segment_by).difference(segment_by)  # Todo: check case when required_dimensions is not empty
-
-            yield strategy_for_metrics(compatible), required_marginal_segmentation, compatible
+        # TODO: Generalise grouping correctly. The following is incorrect due to
+        # ignoring where constraints in nested joins.
+        #
+        # def is_compatible(metric1, metric2):
+        #     strategy1 = strategies[metric1]
+        #     strategy2 = strategies[metric2]
+        #
+        #     for field in ['unit_type', 'segment_by']:
+        #         if getattr(strategy1, field) != getattr(strategy2, field):
+        #             return False
+        #
+        #     implementation1 = metric1.implementation_for_strategy(strategy1)
+        #     implementation2 = metric2.implementation_for_strategy(strategy2)
+        #
+        #     return implementation1._is_compatible_with_metric(implementation2)
+        #
+        # def strategy_for_metrics(metrics):
+        #     unit_type = None
+        #     measures = []
+        #     segment_by = None
+        #     where = None
+        #
+        #     for metric in metrics:
+        #         if unit_type is None:
+        #             unit_type = strategies[metric].unit_type
+        #         else:
+        #             assert unit_type == strategies[metric].unit_type
+        #
+        #         for measure in strategies[metric].measures:
+        #             if measure not in measures:
+        #                 measures.append(measure)
+        #
+        #         if segment_by is None:
+        #             segment_by = list(strategies[metric].segment_by)
+        #         else:
+        #             assert set(segment_by) == set(list(strategies[metric].segment_by))
+        #
+        #         if where is None:
+        #             where = strategies[metric].where
+        #         else:
+        #             assert where == strategies[metric].where
+        #
+        #     return self.measures.get_strategy(
+        #         unit_type=unit_type,
+        #         measures=measures,
+        #         segment_by=segment_by,
+        #         where=where
+        #     )
+        #
+        # if segment_by is None:
+        #     segment_by = []
+        # if not isinstance(segment_by, list):
+        #     segment_by = [segment_by]
+        #
+        # offset = 0
+        # while len(metrics) > 0:
+        #     metric = metrics.pop(0)
+        #     compatible = [metric]
+        #
+        #     for i, other in enumerate(metrics[:]):
+        #         if is_compatible(metric, other):
+        #             compatible.append(other)
+        #             metrics.pop(i + offset)
+        #             offset -= 1
+        #
+        #     strategy = strategy_for_metrics(compatible)
+        #     required_marginal_segmentation = set(strategy.segment_by).difference(segment_by)  # Todo: check case when required_dimensions is not empty
+        #
+        #     yield strategy_for_metrics(compatible), required_marginal_segmentation, compatible

@@ -200,7 +200,6 @@ class Options(object):
         raise KeyError
 
 
-
 class OptionsMixin(object):
 
     @property
