@@ -493,7 +493,7 @@ class Constraint(BaseConstraint):
             return self
         s = self.field.split('/')
         if len(s) > 1 and s[0] == foreign_key:
-            return self.__class__('/'.join(s[1:]), self.relation, self.value, generic=self.generic)
+            return self.__class__('/'.join(s[1:]), self.relation, self.value, generic=False)
         return NullConstraint()
 
     # Extraction of generic and scoped constraints

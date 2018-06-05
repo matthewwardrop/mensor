@@ -138,5 +138,8 @@ class ConstraintTests(unittest.TestCase):
         self.assertEqual(c.scoped_for_unit_type('unit'), Constraint.from_spec({'a': 1, 'c': 3}))
         self.assertEqual(c.scoped_for_unit_type('other'), Constraint.from_spec({'c': 3}))
 
+        for constraint in c.scoped_for_unit_type('unit').operands:
+            self.assertFalse(constraint.has_generic)
+
         mp = MeasureProvider().provides_dimension('b')
         self.assertEqual(c.generic_for_provider(mp), Constraint.from_spec({'b': 2}))
