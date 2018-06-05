@@ -605,23 +605,48 @@ DISTRIBUTION_STATS = {
 }
 
 
-class MeasureDataFrame(pd.DataFrame):
-    """
-    This is a hacky prototype of what will be a convenient way to access measures
-    and metrics via a DataFrame.
-    """
+class EvaluatedMeasures(object):
+
+    @classmethod
+    def for_measures(cls, evaluations):
+        if isinstance(evaluations, EvaluatedMeasures):
+            return evaluations
+        elif isinstance(evaluations, pd.DataFrame):
+            return cls(evaluations)
+        raise RuntimeError("Invalid measures type: {}".format(evaluations.__class__.__name__))
+
+    def __init__(self, evaluations):
+        self._evaluations = evaluations
 
     @property
-    def _constructor(self):
-        return MeasureDataFrame
+    def raw(self):
+        return self._evaluations
+
+    def to_frame(self, *measures, keep_raw_fields=False):
+        measures = list(measures)
+
+        if not measures:
+            measures = self.measures
+
+        if keep_raw_fields:
+            measures += self.measure_fields
+
+        df = self.raw
+        for measure in measures:
+            if measure not in df.columns and measure in self.measures:
+                df = df.assign(**{measure: self._get_measure(measure)})
+
+        if len(self.dimensions):
+            return df.set_index(self.dimensions).sort_index()[measures]
+        return df[measures].T[0]
 
     @property
-    def _constructor_sliced(self):
-        return pd.Series
+    def columns(self):
+        return self.raw.columns
 
     @property
     def measure_fields(self):
-        return [col for col in self.columns if '|' in col]
+        return [col for col in self._evaluations.columns if '|' in col]
 
     @property
     def measures(self):
@@ -629,7 +654,7 @@ class MeasureDataFrame(pd.DataFrame):
 
     @property
     def dimensions(self):
-        return [col for col in self.columns if '|' not in col]
+        return [col for col in self._evaluations.columns if '|' not in col]
 
     def _get_measure_distribution(self, name):
         for field in self.measure_fields:
@@ -641,9 +666,9 @@ class MeasureDataFrame(pd.DataFrame):
     def _get_measure_distribution_fields(self, name):
         distribution = self._get_measure_distribution(name)
         if distribution == DISTRIBUTIONS.NONE:
-            return self[['{}|{}'.format(name, field) for field in DISTRIBUTION_FIELDS[distribution]]]
+            return self.raw[['{}|{}'.format(name, field) for field in DISTRIBUTION_FIELDS[distribution]]]
         else:
-            return self[['{}|{}|{}'.format(name, distribution.name.lower(), field) for field in DISTRIBUTION_FIELDS[distribution]]]
+            return self.raw[['{}|{}|{}'.format(name, distribution.name.lower(), field) for field in DISTRIBUTION_FIELDS[distribution]]]
 
     def _get_measure(self, name):
         if '|' in name:
@@ -667,98 +692,45 @@ class MeasureDataFrame(pd.DataFrame):
                 params = {
                     param: f(*distribution_fields) for param, f in stats[1].items()
                 }
-                return pd.Series(uarray(model.mean(**params), model.std(**params)), name=name, index=self.index)
+                return pd.Series(uarray(model.mean(**params), model.std(**params)), name=name, index=self.raw.index)
             else:
-                return pd.Series(stats(*distribution_fields), name=name, index=self.index)
+                return pd.Series(stats(*distribution_fields), name=name, index=self.raw.index)
         except:
-            return pd.Series(np.nan, index=self.index)
+            return pd.Series(np.nan, index=self.raw.index)
 
     # Allow getting measures by distribution stats
     def __getitem__(self, name):
-        try:
-            return pd.DataFrame.__getitem__(self, name)
-        except KeyError as e:
-            try:
-                return self._get_measure(name)
-            except KeyError:
-                raise e
-            # if '|' not in name:
-            #     distribution =
-            #     if '{}|normal|sum'.format(name) in self.columns:
-            #         mean = self['{}|normal|sum'.format(name)] / self['{}|normal|count'.format(name)]
-            #         var = (self['{}|normal|sos'.format(name)] - self['{}|normal|sum'.format(name)]**2 / self['{}|normal|count'.format(name)]) / (self['{}|normal|count'.format(name)] - 1) / self['{}|normal|count'.format(name)]
-            #         return pd.Series(uarray(mean, np.sqrt(var)), name=name, index=self.index)
-            #     elif '{}|count'.format(name) in self.columns:
-            #         return self['{}|count'.format(name)]
-            raise e
+        if isinstance(name, list):
+            return self.to_frame(*name)
+        else:
+            return self.to_frame(name)[name]
 
     def segmentby(self, segment_by=None):
         segment_by = segment_by or []
         if len(segment_by):
-            return (
-                self
+            return EvaluatedMeasures(
+                self._evaluations
                 .groupby(segment_by)
                 [self.measure_fields]
                 .sum()
             )
-        return self[self.measure_fields].sum()
+        return EvaluatedMeasures(self._evaluations[self.measure_fields].sum())
 
-    @property
-    def as_measures(self):
-        measures = pd.DataFrame().assign(
-            **{dimension: self[dimension] for dimension in self.dimensions},
-            **{measure: self[measure] for measure in self.measures}
-        )
-        if len(self.dimensions):
-            measures = measures.set_index(self.dimensions)
-        return measures
-
-    def _repr_html_(self):
-        return "Use `.as_measures` to get metrics as data frame.<br/>" + pd.DataFrame._repr_html_(self)
+    def query(self, *args, **kwargs):
+        # TODO: Replace with `where`, and use Pandas constraint -> pandas expr filters.
+        return EvaluatedMeasures(self.raw.query(*args, **kwargs))
 
     def __repr__(self):
-        return "Use `.as_measures` to get metrics as data frame.\n" + pd.DataFrame.__repr__(self)
+        return self.to_frame().__repr__()
 
-    def _reduce(self, *args, **kwargs):
-        out = pd.DataFrame._reduce(self, *args, **kwargs)
-        if isinstance(out, pd.Series):
-            return MeasureSeries(out)
-        return out
+    def _repr_html_(self):
+        df = self.to_frame()
+        if hasattr(df, '_repr_html_'):
+            return df._repr_html_()
+        raise NotImplementedError
 
-
-class MeasureSeries(pd.Series):
-
-    @property
-    def measure_fields(self):
-        return [col for col in self.index if '|' in col]
-
-    @property
-    def measures(self):
-        return list(set(field.split('|')[0] for field in self.measure_fields))
-
-    @property
-    def dimensions(self):
-        return [col for col in self.index if '|' not in col]
-
-    # Allow getting measures by distribution stats
-    def __getitem__(self, name):
-        try:
-            return pd.Series.__getitem__(self, name)
-        except KeyError as e:
-            if '|' not in name:
-                if '{}|norm|sum'.format(name) in self.index:
-                    mean = self['{}|norm|sum'.format(name)] / self['{}|norm|count'.format(name)]
-                    var = (self['{}|norm|sos'.format(name)] - self['{}|norm|sum'.format(name)]**2 / self['{}|norm|count'.format(name)]) / (self['{}|norm|count'.format(name)] - 1) / self['{}|norm|count'.format(name)]
-                    return ufloat(mean, np.sqrt(var))
-                elif '{}|count'.format(name) in self.index:
-                    return self['{}|count'.format(name)]
-            raise e
-
-    @property
-    def as_measures(self):
-        return pd.Series(
-            {measure: self[measure] for measure in self.measures}
-        )
+    def add_prefix(self, prefix):
+        return EvaluatedMeasures(self._evaluations.add_prefix(prefix))
 
 
 def quantilesofscores(self, as_weights=False, *, pre_sorted=False, sort_fields=None):

@@ -4,7 +4,7 @@ import pandas as pd
 
 from mensor.constraints import Constraint
 from mensor.measures.registry import MeasureRegistry
-from mensor.measures.types import MeasureDataFrame, MeasureSeries
+from mensor.measures.types import EvaluatedMeasures
 
 from .types import Metric
 
@@ -60,17 +60,14 @@ class MetricRegistry(object):
         for strategy, required_marginal_segmentation, metrics in self._group_metric_evaluations(metrics=metrics, segment_by=segment_by, where=where):
             result = metrics[0].evaluate(strategy, required_marginal_segmentation, compatible_metrics=metrics[1:], **opts)
 
-            if isinstance(result, pd.Series):
-                result = MeasureSeries(result)
-            else:
-                result = MeasureDataFrame(result)
+            result = EvaluatedMeasures.for_measures(result)
 
             results.append(result)
 
         if len(segment_by):
-            return pd.concat([result.set_index(segment_by) for result in results], axis=1)
+            return pd.concat([result.raw.set_index(segment_by) for result in results], axis=1)
         else:
-            return pd.concat(results, axis=1)
+            return pd.concat([result.raw for result in results], axis=1)
 
     def get_ir(self, metrics, segment_by=None, where=None, dry_run=False, **opts):
         for strategy, required_marginal_segmentation, metrics in self._group_metric_evaluations(metrics=metrics, segment_by=segment_by, where=where):

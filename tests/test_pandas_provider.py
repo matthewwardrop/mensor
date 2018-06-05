@@ -44,7 +44,7 @@ class PandasMeasureProviderTests(unittest.TestCase):
             where=None
         )
 
-        self.assertGreater(len(df), 0)
+        self.assertGreater(len(df.raw), 0)
         self.assertEqual(
             set(df.columns),
             set([
@@ -54,4 +54,4 @@ class PandasMeasureProviderTests(unittest.TestCase):
                 'person:buyer/name'
             ])
         )
-        self.assertFalse(df.duplicated('person:buyer/name').any())
+        self.assertFalse(df.raw.duplicated('person:buyer/name').any())

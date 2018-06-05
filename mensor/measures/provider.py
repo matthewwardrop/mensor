@@ -8,8 +8,8 @@ from mensor.constraints import CONSTRAINTS, And, Constraint
 from mensor.utils import AttrDict, SequenceMap
 from mensor.utils.registry import SubclassRegisteringABCMeta
 
-from .types import (AGG_METHODS, Join, MeasureDataFrame, MeasureEvaluator,
-                    MeasureSeries, _Dimension, _Measure,
+from .types import (AGG_METHODS, Join, EvaluatedMeasures, MeasureEvaluator,
+                    _Dimension, _Measure,
                     _StatisticalUnitIdentifier)
 
 __all__ = ['MeasureProvider']
@@ -268,7 +268,6 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
             )
             for name, kwargs in self._provisions.items()
         }
-        return self._provisions
 
     @provisions.setter
     def provisions(self, provisions):
@@ -325,7 +324,7 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
                 implementations.
 
         Returns:
-            MeasureDataFrame: A dataframe of the results of the computation.
+            EvaluatedMeasures: A wrapper around the dataframe of the results of the computation.
         """
         from mensor.backends.pandas import PandasMeasureProvider  # We need this for some pandas transformations
 
@@ -373,17 +372,16 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
 
             # Join in precomputed incompatible joins
             # TODO: Clean-up how joined measures are detected (remembering measure fields have suffixes)
-            joined_measures = set()
+            joined_measure_fields = set()
             if len(joins_post) > 0:
                 for join in joins_post:
-                    joined_measures.update(join.object.columns)
+                    joined_measure_fields.update(join.object.measure_fields)
                     result = result.merge(
-                        join.object,
+                        join.object.raw,
                         left_on=join.left_on,
                         right_on=join.right_on,
                         how=join.how
                     )
-            joined_measures.difference([d.via_name for d in segment_by_post])
 
             # Check columns in resulting dataframe
             expected_columns = _Measure.get_all_fields(measures_post, stats=False) + [f.via_name for f in segment_by_post]
@@ -396,17 +394,15 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
 
             # All new joined in measures need to be multiplied by the count series of
             # this dataframe, so that they are properly weighted.
-            if len(joined_measures) > 0:
-                result = result.apply(lambda col: result['count|raw'] * col if col.name in joined_measures else col, axis=0)
+            if len(joined_measure_fields) > 0:
+                result = result.apply(lambda col: result['count|raw'] * col if col.name in joined_measure_fields else col, axis=0)
 
             result = PandasMeasureProvider._finalise_dataframe(
                 df=result, measures=measures_post, segment_by=segment_by_post,
                 where=where_post, stats=stats, unit_agg=False, reagg=False
             )
 
-        if isinstance(result, pd.Series):
-            return MeasureSeries(result)
-        return MeasureDataFrame(result)
+        return EvaluatedMeasures.for_measures(result)
 
     def _compat_fields_split(self, measures, segment_by, where, joins_post=None):
         """
