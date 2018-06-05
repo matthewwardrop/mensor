@@ -20,7 +20,7 @@ class SQLDialect(object):
 
     QUOTE_COL = '"'
     QUOTE_STR = "'"
-    COLUMN_PATTERN = re.compile(r"^[\w|:_.]+$")
+    COLUMN_PATTERN = re.compile(r"^[^0-9\W][\w/|:_.]*$")
 
     AGG_METHODS = {
         AGG_METHODS.SUM: lambda x: "SUM({})".format(x),
@@ -349,7 +349,7 @@ class SQLMeasureProvider(MeasureProvider):
         return self.dialect.constraint_maps()
 
     def _is_compatible_with(self, provider):
-        return isinstance(provider, self.__class__)
+        return isinstance(provider, SQLMeasureProvider)
 
 
 class SQLTableMeasureProvider(SQLMeasureProvider):
@@ -405,7 +405,7 @@ class SimpleSQLMetricImplementation(SQLMetricImplementation):
         SELECT
             {%- with ns=namespace(_cnt=0) %}
             {%- for dimension in segment_by if dimension not in marginalise and not dimension.private %}
-            {% if loop.index0 > 0 %}, {% endif %}{{ dimension.via_name }}
+            {% if loop.index0 > 0 %}, {% endif %}{{ dimension.via_name | col }}
             {%- set ns._cnt = ns._cnt + 1 %}
             {%- endfor %}
             {%- for metric in metrics %}
@@ -413,7 +413,7 @@ class SimpleSQLMetricImplementation(SQLMetricImplementation):
             {%- endfor %}
             {%- endwith %}
         FROM (
-            {{ provision | indent(width=8) }}
+            {{ provision | indent(width=4) }}
         )
     """
 
