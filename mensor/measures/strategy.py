@@ -64,7 +64,7 @@ class EvaluationStrategy(object):
 
     @property
     def strategy_type(self):
-        if not self.matched_unit_type.is_primary:
+        if not self.matched_unit_type.is_unique:
             return STRATEGY_TYPE.UNIT_REBASE
         else:
             return STRATEGY_TYPE.REGULAR
@@ -87,9 +87,9 @@ class EvaluationStrategy(object):
                         ('provider', o.provider),
                         ('unit_type', o.unit_type)
                     ])
+                    d['strategy_type'] = o.strategy_type
                     if o.measures:
                         d['measures'] = o.measures
-                        d['strategy_type'] = o.strategy_type
                     if o.segment_by:
                         d['segment_by'] = o.segment_by
                     if o.where:
@@ -203,7 +203,7 @@ class EvaluationStrategy(object):
         for join in self.joins:
             joins.append(join.execute(
                 as_join=True,
-                compatible=join.provider._is_compatible_with(self.provider),
+                compatible=self.provider._is_compatible_with(join.provider),
                 **opts
             ))
 
@@ -391,7 +391,7 @@ class EvaluationStrategy(object):
         for sub_strategy in evaluations[1:]:
             strategy.add_join(unit_type, sub_strategy)
 
-        strategy.where = And.from_operands(strategy.where, where.scoped_for_unit_type(unit_type))
+        strategy.where = And.from_operands(strategy.where, where.scoped_for_unit_type(unit_type).scoped_applicable)
 
         # Step 4: Mark any resolved where dependencies as private, unless otherwise
         # requested in `segment_by`
