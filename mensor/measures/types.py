@@ -106,6 +106,10 @@ class MeasureEvaluator(OptionsMixin, metaclass=ABCMeta):
         raise NotImplementedError
 
 
+Provision = namedtuple('Provision', ['provider', 'join_prefix', 'measures', 'dimensions'])
+FeatureBundle = namedtuple('FeatureBundle', ['unit_type', 'dimensions', 'measures'])
+
+
 class Join(object):
 
     # TODO: Review Join API (esp. which arguments are essential, etc)
@@ -744,7 +748,3 @@ def quantilesofscores(self, as_weights=False, *, pre_sorted=False, sort_fields=N
 
 
 pd.Series.quantilesofscores = quantilesofscores
-
-
-Provision = namedtuple('Provision', ['provider', 'join_prefix', 'measures', 'dimensions'])
-DimensionBundle = namedtuple('DimensionBundle', ['unit_type', 'dimensions', 'measures'])

@@ -5,7 +5,7 @@ from enum import Enum
 from mensor.constraints import And, Constraint
 from mensor.utils import SequenceMap
 
-from .types import DimensionBundle, Join, _StatisticalUnitIdentifier
+from .types import FeatureBundle, Join, _StatisticalUnitIdentifier
 
 
 class STRATEGY_TYPE(Enum):
@@ -308,7 +308,7 @@ class EvaluationStrategy(object):
         # Step 1: Collect measures and dimensions into groups based on current unit_type
         # and next unit_type
 
-        current_evaluation = DimensionBundle(unit_type=unit_type, dimensions=[], measures=[])
+        current_evaluation = FeatureBundle(unit_type=unit_type, dimensions=[], measures=[])
         next_evaluations = {}
 
         def collect_dimensions(dimensions, kind='measures', for_constraint=False):
@@ -320,12 +320,12 @@ class EvaluationStrategy(object):
                 ):
                     next_unit_type = registry.resolve(unit_type, dimension.next_unit_type, role='reverse_foreign_key')
                     if next_unit_type not in next_evaluations:
-                        next_evaluations[next_unit_type] = DimensionBundle(unit_type=unit_type, dimensions=[], measures=[])
+                        next_evaluations[next_unit_type] = FeatureBundle(unit_type=unit_type, dimensions=[], measures=[])
                     next_evaluations[next_unit_type]._asdict()[kind].append(dimension.via_next)
                 else:
                     next_unit_type = registry.resolve(unit_type, dimension.next_unit_type, role='foreign_key')
                     if next_unit_type not in next_evaluations:
-                        next_evaluations[next_unit_type] = DimensionBundle(unit_type=next_unit_type, dimensions=[], measures=[])
+                        next_evaluations[next_unit_type] = FeatureBundle(unit_type=next_unit_type, dimensions=[], measures=[])
                     next_evaluations[next_unit_type]._asdict()[kind].append(dimension.via_next)
 
         collect_dimensions(measures, kind='measures')
