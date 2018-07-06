@@ -5,7 +5,8 @@ import pandas as pd
 
 from mensor.constraints import CONSTRAINTS
 from mensor.measures.provider import MeasureProvider
-from mensor.measures.types import AGG_METHODS, _Measure
+from mensor.measures.stats import global_stats_registry
+from mensor.measures.types import _Measure
 
 
 class PandasMeasureProvider(MeasureProvider):
@@ -14,6 +15,15 @@ class PandasMeasureProvider(MeasureProvider):
     # exposed as classmethods for use externally.
 
     REGISTRY_KEYS = ['pandas']
+
+    @classmethod
+    def register_stats(cls, key):
+        register_pandas_agg = functools.partial(global_stats_registry.aggregations.register, backend=key)
+        sum_agg = functools.partial(pd.Series.sum, min_count=1)
+        register_pandas_agg('sum', agg=(sum_agg, lambda x: x))
+        register_pandas_agg('mean', agg=('mean', lambda x: x))
+        register_pandas_agg('sos', agg=(sum_agg, lambda x: x**2))
+        register_pandas_agg('count', agg=(sum_agg, lambda x: x.notnull().astype(int)))
 
     def __init__(self, name, data=None, data_transform=None, **kwargs):
         MeasureProvider.__init__(self, name, **kwargs)
@@ -31,8 +41,9 @@ class PandasMeasureProvider(MeasureProvider):
         return data_transform(self, self._data, self.provisions)
 
     def _evaluate(self, unit_type, measures, where=None, segment_by=None,
-                  stats=True, covariates=False, **opts):
+                  stats_registry=None, stats=True, covariates=False, **opts):
 
+        assert stats_registry is not None
         assert not any(measure.external for measure in measures)
         assert not any(dimension.external for dimension in segment_by)
 
@@ -54,13 +65,13 @@ class PandasMeasureProvider(MeasureProvider):
         return (
             self._finalise_dataframe(
                 df, measures=measures, segment_by=segment_by, where=where,
-                stats=stats, unit_agg=not unit_type.is_unique
+                stats_registry=stats_registry, stats=stats, unit_agg=not unit_type.is_unique
             )
         )
 
     @classmethod
-    def _finalise_dataframe(cls, df, measures, segment_by, where, stats=False,
-                            unit_agg=True, reagg=False):
+    def _finalise_dataframe(cls, df, measures, segment_by, where, stats_registry=None,
+                            stats=False, unit_agg=True, reagg=False):
         """
         This method finalises a `pandas.DataFrame` instance by applying the
         following steps:
@@ -97,7 +108,7 @@ class PandasMeasureProvider(MeasureProvider):
         # Remove any private measures and segments
         for measure in measures:
             if measure.private:
-                df.drop(list(measure.get_fields(stats=False)), axis=1)
+                df.drop(list(measure.get_fields(stats=False, stats_registry=stats_registry)), axis=1)
         for dimension in segment_by:
             if dimension.private:
                 df.drop(dimension.via_name, axis=1)
@@ -106,25 +117,25 @@ class PandasMeasureProvider(MeasureProvider):
         segment_by = [s for s in segment_by if not s.private]
 
         if unit_agg:
-            df = cls._dataframe_agg(df, measures, segment_by, unit_agg=True, stats=False)
+            df = cls._dataframe_agg(df, measures, segment_by, unit_agg=True, stats_registry=stats_registry, stats=False)
 
         if not unit_agg or stats:
-            df = cls._dataframe_agg(df, measures, segment_by, unit_agg=False, stats=stats, reagg=reagg)
+            df = cls._dataframe_agg(df, measures, segment_by, unit_agg=False, stats_registry=stats_registry, stats=stats, reagg=reagg)
 
         return df
 
     @classmethod
     def _dataframe_agg(cls, df, measures, segment_by, unit_agg=False,
-                       stats=False, reagg=False):
+                       stats_registry=None, stats=False, reagg=False):
 
-        measure_cols = _Measure.get_all_fields(measures, unit_agg=unit_agg, stats=stats)
+        measure_cols = _Measure.get_all_fields(measures, unit_agg=unit_agg, stats=stats, stats_registry=stats_registry)
         segment_by_cols = [s.fieldname(role='dimension') for s in segment_by]
 
         if len(df) == 0:
             return pd.DataFrame([], columns=measure_cols + segment_by_cols)
 
         measure_cols, measure_aggs = cls._measure_agg_maps(
-            measures, external=True, unit_agg=unit_agg, stats=stats, reagg=reagg
+            measures, external=True, unit_agg=unit_agg, stats=stats, stats_registry=stats_registry, reagg=reagg
         )
 
         if isinstance(df, pd.Series):
@@ -162,7 +173,7 @@ class PandasMeasureProvider(MeasureProvider):
 
     # Aggregation related methods
     @classmethod
-    def _measure_agg_maps(cls, measures, external=True, unit_agg=False, stats=False, reagg=False):
+    def _measure_agg_maps(cls, measures, external=True, unit_agg=False, stats=False, stats_registry=None, reagg=False):
         def measure_map(name, op):
             return lambda df: op(df[name])
         col_maps = {}
@@ -170,37 +181,10 @@ class PandasMeasureProvider(MeasureProvider):
         for measure in measures:
             if not external and measure.external:
                 continue
-            for field_name, (col_agg, col_map) in measure.get_fields(stats=stats, unit_agg=unit_agg, for_pandas=True).items():
+            for field_name, (col_agg, col_map) in measure.get_fields(stats=stats, unit_agg=unit_agg, stats_registry=stats_registry, for_pandas=True).items():
                 col_aggs[field_name] = functools.partial(pd.Series.sum, min_count=1) if reagg else col_agg
                 col_maps[field_name] = measure_map(measure.fieldname(role='measure'), (lambda x: x) if reagg else col_map)
         return col_maps, col_aggs
-
-    @property
-    def _agg_methods(self):
-        return self._get_agg_methods()
-
-    @classmethod
-    def _get_agg_methods(cls):
-        sum_agg = functools.partial(pd.Series.sum, min_count=1)
-        return {
-            AGG_METHODS.SUM: (sum_agg, lambda x: x),
-            AGG_METHODS.MEAN: ('mean', lambda x: x),
-            AGG_METHODS.SQUARE_SUM: (sum_agg, lambda x: x**2),
-            AGG_METHODS.COUNT: (sum_agg, lambda x: x.notnull().astype(int))
-        }
-
-    @classmethod
-    def _agg_method(cls, agg_type):
-        """
-        Parameters:
-            agg_type (AGG_METHOD): The agg method type for which to extract
-                its representation for this instance of MeasureProvider.
-        """
-        if not isinstance(agg_type, AGG_METHODS):
-            raise ValueError("Agg type `{}` is not a valid instance of `mensor.measures.types.AGG_METHODS`.".format(agg_type))
-        if agg_type not in cls._get_agg_methods():
-            raise NotImplementedError("Agg type `{}` is not implemented by `{}`.".format(agg_type, cls))
-        return cls._get_agg_methods()[agg_type]
 
     #  Constraint related methods
     @classmethod

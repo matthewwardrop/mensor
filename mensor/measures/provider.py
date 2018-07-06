@@ -8,7 +8,8 @@ from mensor.constraints import CONSTRAINTS, And, Constraint
 from mensor.utils import AttrDict, SequenceMap
 from mensor.utils.registry import SubclassRegisteringABCMeta
 
-from .types import (AGG_METHODS, Join, EvaluatedMeasures, MeasureEvaluator,
+from .stats import global_stats_registry
+from .types import (Join, EvaluatedMeasures, MeasureEvaluator,
                     _Dimension, _Measure,
                     _StatisticalUnitIdentifier)
 
@@ -70,6 +71,16 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
     `MeasureRegistry`s. Once registered, the registry can evaluate measures
     transparently across all `MeasureProvider`s, handling the joins as necessary.
     """
+
+    REGISTRY_KEYS = None
+
+    @classmethod
+    def _on_registered(cls, key):
+        return cls.register_stats(key)
+
+    @classmethod
+    def register_stats(cls, key):
+        pass
 
     @classmethod
     def from_yaml(cls, yml):
@@ -236,9 +247,8 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
     def measures(self, measures):
         self._measures = self._get_dimensions_from_specs(_Measure, measures)
 
-    def provides_measure(self, name=None, expr=None, default=None, desc=None, shared=False, unit_agg='sum', distribution='normal'):
-        measure = _Measure(name, expr=expr, default=default, desc=desc, shared=shared, unit_agg=unit_agg, distribution=distribution, provider=self)
-        assert measure.unit_agg in self._agg_methods, "This provider does not support aggregating at the unit level using '{}'.".format(measure.unit_agg)
+    def provides_measure(self, name=None, expr=None, default=None, desc=None, shared=False, distribution='normal'):
+        measure = _Measure(name, expr=expr, default=default, desc=desc, shared=shared, distribution=distribution, provider=self)
         self._measures.append(measure)
         return self
 
@@ -288,19 +298,20 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
 
     # Measure evaluation
     def _prepare_evaluation_args(f):
-        def wrapped(self, unit_type, measures=None, segment_by=None, where=None, joins=None, stats=True, covariates=False, **opts):
+        def wrapped(self, unit_type, measures=None, segment_by=None, where=None, joins=None, stats_registry=None, stats=True, covariates=False, **opts):
             unit_type = self.identifier_for_unit(unit_type)
             measures = {} if measures is None else self.resolve(unit_type=unit_type, features=measures, role='measure')
             segment_by = {} if segment_by is None else self.resolve(unit_type=unit_type, features=segment_by, role='dimension')
             where = Constraint.from_spec(where)
             joins = joins or []
+            stats_registry = stats_registry or global_stats_registry
             opts = self.opts.process(**opts)
-            return f(self, unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, stats=stats, covariates=covariates, **opts)
+            return f(self, unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, stats_registry=stats_registry, stats=stats, covariates=covariates, **opts)
         return wrapped
 
     @_prepare_evaluation_args
     def evaluate(self, unit_type, measures=None, segment_by=None, where=None,
-                 joins=None, stats=True, covariates=False, **opts):
+                 joins=None, stats_registry=None, stats=True, covariates=False, **opts):
         """
         This method evaluates the requested `measures` in this MeasureProvider
         segmented by the dimensions in `segment_by` after joining in the
@@ -363,6 +374,7 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
             segment_by=segment_by_pre,
             where=where_pre,
             joins=joins_pre,
+            stats_registry=stats_registry,
             stats=stats and len(joins_post) == 0,
             covariates=covariates,
             **opts
@@ -384,7 +396,7 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
                     )
 
             # Check columns in resulting dataframe
-            expected_columns = _Measure.get_all_fields(measures_post, stats=False) + [f.via_name for f in segment_by_post]
+            expected_columns = _Measure.get_all_fields(measures_post, stats_registry=stats_registry, stats=False) + [f.via_name for f in segment_by_post]
             excess_columns = set(result.columns).difference(expected_columns)
             missing_columns = set(expected_columns).difference(result.columns)
             if len(excess_columns):  # remove any unnecessary columns (such as now used join keys)
@@ -395,14 +407,15 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
             # All new joined in measures need to be multiplied by the count series of
             # this dataframe, so that they are properly weighted.
             if len(joined_measure_fields) > 0:
-                result = result.apply(lambda col: result['count|raw'] * col if col.name in joined_measure_fields else col, axis=0)
+                result = result.apply(lambda col: result['count|sum'] * col if col.name in joined_measure_fields else col, axis=0)
 
             result = PandasMeasureProvider._finalise_dataframe(
                 df=result, measures=measures_post, segment_by=segment_by_post,
-                where=where_post, stats=stats, unit_agg=False, reagg=False
+                where=where_post, stats=stats, stats_registry=stats_registry,
+                unit_agg=False, reagg=False
             )
 
-        return EvaluatedMeasures.for_measures(result)
+        return EvaluatedMeasures.for_measures(result, stats_registry=stats_registry)
 
     def _compat_fields_split(self, measures, segment_by, where, joins_post=None):
         """
@@ -480,7 +493,7 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
         return measures_pre, segment_by_pre, where_pre, measures_post, segment_by_post, where_post
 
     def _evaluate(self, unit_type, measures=None, segment_by=None, where=None,
-                  joins=None, stats=True, covariates=False, **opts):
+                  joins=None, stats_registry=None, stats=True, covariates=False, **opts):
         """
         MeasureProviders must in their _evaluate function (in logical order):
 
@@ -511,7 +524,7 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
 
     @_prepare_evaluation_args
     def get_ir(self, unit_type, measures=None, segment_by=None, where=None,
-               joins=None, stats=True, covariates=False, **opts):
+               joins=None, stats_registry=None, stats=True, covariates=False, **opts):
         # Get intermediate representation for this evaluation query
         if not all(isinstance(j, Join) and j.compatible for j in joins):
             raise RuntimeError("All joins for IR must be compatible with this provider.")
@@ -521,13 +534,14 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
             segment_by=segment_by,
             where=where,
             joins=joins,
+            stats_registry=stats_registry,
             stats=stats,
             covariates=covariates,
             **opts
         )
 
     def _get_ir(self, unit_type, measures=None, segment_by=None, where=None,
-                joins=None, stats=True, covariates=False, **opts):
+                joins=None, stats_registry=None, stats=True, covariates=False, **opts):
         raise NotImplementedError
 
     # Compatibility
@@ -539,28 +553,6 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
         pandas.
         '''
         return False
-
-    # Aggregation methods for measures
-    @property
-    def _agg_methods(self):
-        """
-        A dictionary of MeasureProvider implementation specific representations
-        of actions to perform for each of the types of aggregation specified
-        in `.types.AGG_METHODS`.
-        """
-        return {}
-
-    def _agg_method(self, agg_type):
-        """
-        Parameters:
-            agg_type (AGG_METHOD): The agg method type for which to extract
-                its representation for this instance of MeasureProvider.
-        """
-        if not isinstance(agg_type, AGG_METHODS):
-            raise ValueError("Agg type `{}` is not a valid instance of `mensor.measures.types.AGG_METHODS`.".format(agg_type))
-        if agg_type not in self._agg_methods:
-            raise NotImplementedError("Agg type `{}` is not implemented by `{}`.".format(agg_type, self.__class__))
-        return self._agg_methods[agg_type]
 
     # Constraint interpretation
     @property

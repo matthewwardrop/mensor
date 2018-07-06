@@ -23,6 +23,10 @@ class SubclassRegisteringABCMeta(ABCMeta):
                     logging.info("Ignoring attempt by class `{}` to register key '{}', which is already registered for class `{}`.".format(cls.__name__, key, cls._registry[key].__name__))
                 else:
                     cls._registry[key] = cls
+                    cls._on_registered(key)
+
+    def _on_registered(cls, key):
+        pass
 
     def for_kind(cls, key):
         return cls._registry[key]

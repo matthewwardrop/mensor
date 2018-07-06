@@ -1,8 +1,10 @@
 import os
 from collections import Counter
 
-from ..utils import nested_dict_copy, SequenceMap
+from mensor.utils import nested_dict_copy, SequenceMap
+
 from .provider import MeasureProvider
+from .stats import StatsRegistry, global_stats_registry
 from .strategy import EvaluationStrategy
 from .types import (MeasureEvaluator, Provision, _ProvidedFeature,
                     _ResolvedFeature)
@@ -117,6 +119,7 @@ class MeasureRegistry(MeasureEvaluator):
 
     def __init__(self):
         self._providers = {}
+        self._stats_registry = StatsRegistry(fallback=global_stats_registry)
         self._cache = MeasureRegistry.GraphCache()
 
     def _cache_refresh(self):
@@ -156,6 +159,13 @@ class MeasureRegistry(MeasureEvaluator):
         provider = self._providers.pop(provider_name)
         self._cache_refresh()
         return provider
+
+    # Transform registration
+    def register_transform(transform, name=None, backend=None):
+        return self._stats_registry.transforms.register(transform, name=name, backend=backend)
+
+    def register_agg(agg, name=None, backend=None):
+        return self._stats_registry.aggregations.register(transform, name=name, backend=backend)
 
     @property
     def unit_types(self):

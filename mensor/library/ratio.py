@@ -2,27 +2,26 @@ import functools
 
 from mensor.metrics import Metric
 from mensor.backends.sql import SimpleSQLMetricImplementation
-from mensor.measures.types import DISTRIBUTIONS
 
 
 def get_sum_and_variance(strategy, measure):
     measure = strategy.measures[measure]
     col = strategy.provider._col
 
-    if measure.distribution == DISTRIBUTIONS.NORMAL:
+    if measure.distribution == 'normal':
         measure_sum = col('{}|normal|sum'.format(measure.via_name))
         measure_variance = '(1.0 * {sos} - 1.0 * POW({sum}, 2) / {count})'.format(
             sum=col('{}|normal|sum'.format(measure.via_name)),
             sos=col('{}|normal|sos'.format(measure.via_name)),
             count=col('{}|normal|count'.format(measure.via_name))
         )
-    elif measure.distribution == DISTRIBUTIONS.BINOMIAL:
+    elif measure.distribution == 'binomial':
         measure_sum = col('{}|binomial|sum'.format(measure.via_name))
         measure_variance = '(1.0 * {sum} * (1.0 - {sum} / {count}))'.format(
             sum=col('{}|normal|sum'.format(measure.via_name)),
             count=col('{}|normal|count'.format(measure.via_name))
         )
-    elif measure.distribution == DISTRIBUTIONS.NONE:
+    elif measure.distribution is None:
         measure_sum = col('{}|sum'.format(measure.via_name))
         measure_variance = '0.0'
     else:

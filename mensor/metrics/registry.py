@@ -60,7 +60,7 @@ class MetricRegistry(object):
         for strategy, required_marginal_segmentation, metrics in self._group_metric_evaluations(metrics=metrics, segment_by=segment_by, where=where):
             result = metrics[0].evaluate(strategy, required_marginal_segmentation, compatible_metrics=metrics[1:], **opts)
 
-            result = EvaluatedMeasures.for_measures(result)
+            result = EvaluatedMeasures.for_measures(result, stats_registry=self.measures._stats_registry)
 
             results.append(result)
 

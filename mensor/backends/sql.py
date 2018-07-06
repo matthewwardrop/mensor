@@ -6,7 +6,7 @@ import jinja2
 
 from mensor.constraints import CONSTRAINTS
 from mensor.measures.provider import MeasureProvider
-from mensor.measures.types import AGG_METHODS
+from mensor.measures.stats import global_stats_registry
 from mensor.metrics.types import MetricImplementation
 from mensor.utils.registry import SubclassRegisteringABCMeta
 
@@ -23,10 +23,10 @@ class SQLDialect(object):
     COLUMN_PATTERN = re.compile(r"^[^0-9\W][\w/|:_.]*$")
 
     AGG_METHODS = {
-        AGG_METHODS.SUM: lambda x: "SUM({})".format(x),
-        AGG_METHODS.MEAN: lambda x: "AVG({})".format(x),
-        AGG_METHODS.SQUARE_SUM: lambda x: "SUM(POW({}, 2))".format(x),
-        AGG_METHODS.COUNT: lambda x: "COUNT({})".format(x)
+        'sum': lambda x: "SUM({})".format(x),
+        'mean': lambda x: "AVG({})".format(x),
+        'sos': lambda x: "SUM(POW({}, 2))".format(x),
+        'count': lambda x: "COUNT({})".format(x)
     }
 
     TEMPLATE_BASE = textwrap.dedent("""
@@ -195,6 +195,15 @@ class SQLMeasureProvider(MeasureProvider):
     REGISTRY_KEYS = ['sql']
     COLUMN_EXPR_PREAPPLIED = False
 
+    @classmethod
+    def _on_registered(cls, key):
+        for agg in ['sum', 'mean', 'sos', 'count']:
+            global_stats_registry.aggregations.register(
+                name=agg,
+                backend=key,
+                agg=eval("lambda field, dialect: dialect.AGG_METHODS['{}'](field)".format(agg), {}, {})
+            )
+
     def __init__(self, *args, sql=None, executor=None, **kwargs):
 
         if not executor:
@@ -227,13 +236,14 @@ class SQLMeasureProvider(MeasureProvider):
             }
         )
 
-    def _evaluate(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
+    def _evaluate(self, unit_type, measures, segment_by, where, joins, stats_registry, stats, covariates, **opts):
         df = self.executor.query(self.get_sql(
             unit_type,
             measures=measures,
             segment_by=segment_by,
             where=where,
             joins=joins,
+            stats_registry=stats_registry,
             stats=stats,
             covariates=covariates,
             **opts
@@ -244,7 +254,7 @@ class SQLMeasureProvider(MeasureProvider):
     def get_sql(self, *args, **kwargs):
         return self.get_ir(*args, **kwargs)
 
-    def _get_ir(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
+    def _get_ir(self, unit_type, measures, segment_by, where, joins, stats_registry, stats, covariates, **opts):
         field_map = self._field_map(unit_type, measures, segment_by, joins)
         unit_agg = not unit_type.is_unique
         sql = self._template_environment.get_template(self.dialect.TEMPLATE_BASE).render(
@@ -253,7 +263,7 @@ class SQLMeasureProvider(MeasureProvider):
             provider=self,
             table_name=self._table_name(unit_type),
             dimensions=self._get_dimensions_sql(field_map, segment_by),
-            measures=self._get_measures_sql(field_map, measures, unit_agg, stats, covariates),
+            measures=self._get_measures_sql(field_map, measures, unit_agg, stats_registry, stats, covariates),
             groupby=self._get_groupby_sql(field_map, segment_by),
             joins=joins,
             constraints=self._get_where_sql(field_map, where),
@@ -315,7 +325,7 @@ class SQLMeasureProvider(MeasureProvider):
                 )
         return dims
 
-    def _get_measures_sql(self, field_map, measures, unit_agg, stats, covariates):
+    def _get_measures_sql(self, field_map, measures, unit_agg, stats_registry, stats, covariates):
         aggs = []
 
         if unit_agg and stats:
@@ -323,10 +333,10 @@ class SQLMeasureProvider(MeasureProvider):
         else:
             for measure in measures:
                 if not measure.private:
-                    for fieldname, col_map in measure.get_fields(stats=stats, unit_agg=unit_agg).items():
+                    for fieldname, col_map in measure.get_fields(stats=stats, stats_registry=stats_registry, unit_agg=unit_agg).items():
                         aggs.append(
                             '{col_op} AS {f}'.format(
-                                col_op=col_map('1' if measure == 'count' else field_map['measures'][measure.via_name]),
+                                col_op=col_map('1' if measure == 'count' else field_map['measures'][measure.via_name], self.dialect),
                                 f=self._col(fieldname),
                             )
                         )
@@ -339,10 +349,6 @@ class SQLMeasureProvider(MeasureProvider):
     def _get_where_sql(self, field_map, where):
         if where:
             return self._constraint_map(where.kind)(where, field_map, self._get_where_sql)
-
-    @property
-    def _agg_methods(self):
-        return self.dialect.AGG_METHODS
 
     @property
     def _constraint_maps(self):
