@@ -113,7 +113,7 @@ class EvaluationStrategy(object):
         assert isinstance(strategy, EvaluationStrategy)
 
         # Add primary join key if missing and set join
-        self_unit_type = self.provider.identifier_for_unit(unit_type.name).with_alias(unit_type.name)
+        self_unit_type = self.provider.identifier_for_unit(unit_type.name).with_mask(unit_type.name)
         join_unit_type = strategy.provider.identifier_for_unit(unit_type.name)
         if self_unit_type not in self.segment_by:
             self.segment_by.prepend(self_unit_type.as_private)

@@ -285,7 +285,7 @@ pd.Series.quantilesofscores = quantilesofscores
 
 class _FeatureAttrsMixin(object):
 
-    def __init__(self, name, unit_type=None, via=None, external=False, private=False, implicit=False, kind=None, alias=None):
+    def __init__(self, name, unit_type=None, via=None, external=False, private=False, implicit=False, kind=None, mask=None):
         self.name = name
         self.unit_type = unit_type
         self.external = external
@@ -293,7 +293,7 @@ class _FeatureAttrsMixin(object):
         self.implicit = implicit
         self.via = via
         self.kind = kind
-        self.alias = alias
+        self.mask = mask
 
     def _with_attrs(self, **attrs):
         obj = copy.copy(self)
@@ -313,7 +313,7 @@ class _FeatureAttrsMixin(object):
             'implicit': self.implicit,
             'via': self.via,
             'kind': self.kind,
-            'alias': self.alias
+            'mask': self.mask
         }
 
     @property
@@ -327,14 +327,14 @@ class _FeatureAttrsMixin(object):
         self._name = name
 
     @property
-    def alias(self):
-        return self._alias or self.name
+    def mask(self):
+        return self._mask or self.name
 
-    @alias.setter
-    def alias(self, alias):
-        if alias is not None and not re.match(r'^(?![0-9])[\w_:]+$', alias):
-            raise ValueError("Invalid feature alias '{}'. All aliases must consist only of word characters, numbers, underscores and colons, and cannot start with a number.".format(name))
-        self._alias = alias
+    @mask.setter
+    def mask(self, mask):
+        if mask is not None and not re.match(r'^(?![0-9])[\w_:]+$', mask):
+            raise ValueError("Invalid feature mask '{}'. All maskes must consist only of word characters, numbers, underscores and colons, and cannot start with a number.".format(name))
+        self._mask = mask
 
     @property
     def as_external(self):
@@ -360,8 +360,8 @@ class _FeatureAttrsMixin(object):
     def as_explicit(self):
         return self._with_attrs(implicit=True)
 
-    def with_alias(self, alias):
-        return self._with_attrs(alias=alias or None)
+    def with_mask(self, mask):
+        return self._with_attrs(mask=mask or None)
 
     @property
     def via(self):
@@ -405,8 +405,8 @@ class _FeatureAttrsMixin(object):
     @property
     def via_name(self):
         if self.via:
-            return '{}/{}'.format(self.via, self.alias)
-        return self.alias
+            return '{}/{}'.format(self.via, self.mask)
+        return self.mask
 
     # Methods to assist MeasureProviders with handling data field names
     def fieldname(self, role=None):
@@ -422,7 +422,7 @@ class _FeatureAttrsMixin(object):
                 attrs.append(attr[0])
         return (
             self.via_name
-            + ('[{}]'.format(self.name) if self.alias != self.name else '')
+            + ('[{}]'.format(self.name) if self.mask != self.name else '')
             + ('({})'.format(','.join(attrs)) if attrs else '')
         )
 
@@ -509,7 +509,7 @@ class _ResolvedFeature(_FeatureAttrsMixin):
     def __repr__(self):
         return (
             "Resolved([{}/]{}, {})".format(
-                (self.unit_type if isinstance(self.unit_type, str) else self.unit_type.alias) if self.unit_type else '*',
+                (self.unit_type if isinstance(self.unit_type, str) else self.unit_type.mask) if self.unit_type else '*',
                 _FeatureAttrsMixin.__repr__(self),
                 len(self.providers),
             )

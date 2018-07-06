@@ -160,12 +160,12 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
         if isinstance(unit_type, _StatisticalUnitIdentifier):
             if unit_type.provider is self:
                 return unit_type
-            unit_type = unit_type.alias
+            unit_type = unit_type.mask
         if unit_type in self.identifiers:
             return self.identifiers[unit_type]
         for identifier in sorted(self.identifiers, key=lambda x: len(x.name), reverse=True):
             if identifier.matches(unit_type):
-                return identifier.with_alias(unit_type if isinstance(unit_type, str) else unit_type.name)
+                return identifier.with_mask(unit_type if isinstance(unit_type, str) else unit_type.name)
         raise ValueError("No such identifier: '{}'.".format(unit_type))
 
     def foreign_keys_for_unit(self, unit_type=None):
@@ -177,7 +177,7 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
         for foreign_key in self.identifiers:
             if self._unit_has_foreign_key(unit_type, foreign_key):
                 if unit_type.name == foreign_key:
-                    foreign_key = foreign_key.with_alias(unit_type.alias)
+                    foreign_key = foreign_key.with_mask(unit_type.mask)
                 foreign_keys.append(foreign_key)
         return foreign_keys
 

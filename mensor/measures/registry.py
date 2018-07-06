@@ -193,11 +193,11 @@ class MeasureRegistry(MeasureEvaluator):
             if avail_unit_type.matches(unit_type):
                 for feature, instances in feature_source[avail_unit_type].items():
                     if feature not in features and (not attr_filter or attr_filter(feature)):
-                        alias = None
+                        mask = None
                         if kind in ('foreign_key', 'reverse_foreign_key') and avail_unit_type == feature.name:
-                            alias = unit_type.name
+                            mask = unit_type.name
                         features.append(
-                            _ResolvedFeature(feature.name, providers=[d.provider for d in instances], unit_type=unit_type, alias=alias, kind=kind)
+                            _ResolvedFeature(feature.name, providers=[d.provider for d in instances], unit_type=unit_type, mask=mask, kind=kind)
                         )
         return features
 
@@ -373,7 +373,7 @@ class MeasureRegistry(MeasureEvaluator):
                     if feature != unit_type:
                         print(
                             "        - {}{}".format(
-                                feature.alias,
+                                feature.mask,
                                 " [{}]".format(feature.desc) if feature.desc else ""
                             )
                         )

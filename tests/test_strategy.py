@@ -176,7 +176,7 @@ class EvaluationStrategyTests(unittest.TestCase):
         self.assertEqual({'person:seller', 'ds'}, set(rjoin.join_on_left))
         self.assertEqual({'person:seller', 'ds'}, set(rjoin.join_on_right))
 
-    def test_automatic_aliasing(self):
+    def test_automatic_masking(self):
         es = self.registry.get_strategy(
             'person:seller',
             measures=['transaction/value'],
@@ -186,5 +186,5 @@ class EvaluationStrategyTests(unittest.TestCase):
         self.assertIn('person:seller', es.segment_by)
 
         person_dimension = es.segment_by['person:seller']
-        self.assertEqual(person_dimension.alias, 'person:seller')
+        self.assertEqual(person_dimension.mask, 'person:seller')
         self.assertEqual(person_dimension.name, 'person')
