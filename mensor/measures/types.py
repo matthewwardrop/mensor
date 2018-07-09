@@ -75,17 +75,17 @@ class MeasureEvaluator(OptionsMixin, metaclass=ABCMeta):
             features = [features]
 
         unresolvable = []
-        resolved = {}
+        resolved = SequenceMap()
         for feature in features:
             try:
                 attrs = with_attrs.copy() if with_attrs else {}
                 if isinstance(feature, tuple):
-                    attrs.update(feature[1])
-                    feature = feature[0]
+                    feature = FeatureSpec(feature[0], **feature[1])
                 if isinstance(feature, dict):
                     feature = FeatureSpec(**feature)
                 if isinstance(feature, FeatureSpec):
-                    feature, attrs = feature.as_source_with_attrs(unit_type)
+                    feature, extra_attrs = feature.as_source_with_attrs(unit_type)
+                    attrs.update(extra_attrs)
                 r = self._resolve(unit_type=unit_type, feature=feature, role=role)._with_attrs(**attrs)
                 resolved[r] = r
             except ValueError:
@@ -94,7 +94,7 @@ class MeasureEvaluator(OptionsMixin, metaclass=ABCMeta):
             raise ValueError("Could not resolve {}(s) associated with unit_type '{}' for: '{}'".format(role or 'feature', unit_type.__repr__(), "', '".join(str(dim) for dim in unresolvable)))
 
         if return_one:
-            return list(resolved.values())[0]
+            return resolved.first
         return resolved
 
     def _resolve(self, unit_type, feature, role=None):
