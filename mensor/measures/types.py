@@ -1,4 +1,6 @@
 import copy
+import hashlib
+import json
 import re
 from abc import ABCMeta, abstractmethod
 from collections import OrderedDict, namedtuple
@@ -8,10 +10,11 @@ import numpy as np
 import pandas as pd
 import scipy.stats.distributions
 import six
+import yaml
 from uncertainties import ufloat
 from uncertainties.unumpy import uarray
 
-from mensor.utils import startseq_match, OptionsMixin
+from mensor.utils import startseq_match, OptionsMixin, SequenceMap
 
 from .stats import global_stats_registry
 
@@ -46,7 +49,7 @@ class MeasureEvaluator(OptionsMixin, metaclass=ABCMeta):
 
     # Resolution
 
-    def resolve(self, unit_type, features, role=None):
+    def resolve(self, unit_type, features, role=None, with_attrs=None):
         """
         This method resolves one or more features optionally associated with a
         unit_type and a role. Note that this method is concerned about
@@ -58,26 +61,40 @@ class MeasureEvaluator(OptionsMixin, metaclass=ABCMeta):
             unit_type (str, None): A unit type for which the resolution should
                 be done.
             role (str, None): One of 'measure', 'dimension', 'identifier' or `None`.
+            with_attrs (dict, None): Attributes to set on the returned feature.
+                Note that these are *additive* to any attributes already inherited
+                from feature_type (which are otherwise preserved).
 
         Returns:
             _Dimension, _Measure, _StatisticalUnitIdentifier: The resolved object.
         """
+        return_one = False
 
-        if isinstance(features, dict):
-            features = list(features)
-        if not isinstance(features, list):
-            return self._resolve(unit_type=unit_type, feature=features, role=role)
+        if not isinstance(features, (list, SequenceMap)):
+            return_one = True
+            features = [features]
 
         unresolvable = []
         resolved = {}
         for feature in features:
             try:
-                r = self._resolve(unit_type=unit_type, feature=feature, role=role)
+                attrs = with_attrs.copy() if with_attrs else {}
+                if isinstance(feature, tuple):
+                    attrs.update(feature[1])
+                    feature = feature[0]
+                if isinstance(feature, dict):
+                    feature = FeatureSpec(**feature)
+                if isinstance(feature, FeatureSpec):
+                    feature, attrs = feature.as_source_with_attrs(unit_type)
+                r = self._resolve(unit_type=unit_type, feature=feature, role=role)._with_attrs(**attrs)
                 resolved[r] = r
             except ValueError:
                 unresolvable.append(feature)
         if len(unresolvable):
-            raise RuntimeError("Could not resolve {}(s) associated with unit_type '{}' for: '{}'".format(role or 'feature', unit_type.__repr__(), "', '".join(str(dim) for dim in unresolvable)))
+            raise ValueError("Could not resolve {}(s) associated with unit_type '{}' for: '{}'".format(role or 'feature', unit_type.__repr__(), "', '".join(str(dim) for dim in unresolvable)))
+
+        if return_one:
+            return list(resolved.values())[0]
         return resolved
 
     def _resolve(self, unit_type, feature, role=None):
@@ -106,6 +123,69 @@ class MeasureEvaluator(OptionsMixin, metaclass=ABCMeta):
     def get_ir(self, unit_type, measures=None, segment_by=None, where=None,
                joins=None, stats=True, covariates=False, **opts):
         raise NotImplementedError
+
+
+class FeatureSpec:
+
+    ALLOWED_TRANSFORMS = ['pre_agg', 'agg', 'post_agg', 'pre_rebase_agg', 'rebase_agg', 'post_rebase_agg', 'alias']
+
+    def __init__(self, source, alias=None, transforms=None):
+        self.source = source
+        self.alias = alias or None
+        self.transforms = transforms or {}
+
+    def __repr__(self):
+        return "<Measure" + (f"[{self.alias}]" if self.alias else "") + (" (with transforms)" if self.transforms else "") + ">"
+
+    def with_alias(self, alias):
+        self.alias = alias
+        return self
+
+    def with_transforms(self, unit_type, pre_agg=None, agg=None, post_agg=None, pre_rebase_agg=None, rebase_agg=None, post_rebase_agg=None, alias=None):
+        variables = locals()
+        transforms = {
+            name: variables[name]
+            for name in self.ALLOWED_TRANSFORMS
+            if variables[name] is not None
+        }
+        if transforms:
+            self.transforms[unit_type] = transforms
+        return self
+
+    def get_attrs(self, unit_type):
+        attrs = {
+            'transforms': self.transforms
+        }
+        if self.alias:
+            if unit_type not in attrs['transforms']:
+                attrs['transforms'][unit_type] = {}
+            attrs['transforms'][unit_type]['alias'] = self.alias
+        return attrs
+
+    def as_source_with_attrs(self, unit_type):
+        return self.source, self.get_attrs(unit_type)
+
+    @property
+    def as_dict(self):
+        return {
+            'source': self.source,
+            'alias': self.alias,
+            'transforms': self.transforms
+        }
+
+    @property
+    def as_yaml(self):
+        return yaml.dump(self.as_feature, default_flow_style=False, indent=4)
+
+
+class MeasureSpec(FeatureSpec):
+
+    ALLOWED_TRANSFORMS = ['pre_agg', 'agg', 'post_agg', 'pre_rebase_agg', 'rebase_agg', 'post_rebase_agg', 'alias']
+
+
+class DimensionSpec(FeatureSpec):
+
+    ALLOWED_TRANSFORMS = ['pre_agg', 'pre_rebase_agg', 'alias']
 
 
 Provision = namedtuple('Provision', ['provider', 'join_prefix', 'measures', 'dimensions'])
@@ -285,7 +365,11 @@ pd.Series.quantilesofscores = quantilesofscores
 
 class _FeatureAttrsMixin(object):
 
-    def __init__(self, name, unit_type=None, via=None, external=False, private=False, implicit=False, kind=None, mask=None):
+    ALLOW_ALL_ATTRIBUTES = False
+    EXTRA_ATTRIBUTES = {}
+
+    def __init__(self, name, unit_type=None, via=None, external=False, private=False, implicit=False, kind=None, mask=None, transforms=None, **extra_attrs):
+
         self.name = name
         self.unit_type = unit_type
         self.external = external
@@ -294,12 +378,35 @@ class _FeatureAttrsMixin(object):
         self.via = via
         self.kind = kind
         self.mask = mask
+        self.transforms = transforms
+
+        self._extra_attributes = {}
+
+        for attr, value in extra_attrs.items():
+            if self.ALLOW_ALL_ATTRIBUTES or attr in self.EXTRA_ATTRIBUTES:
+                setattr(self, attr, value)
+            else:
+                raise KeyError("No such attribute {}.".format(attr))
+
+    def __getattr__(self, name):
+        if name.startswith('_'):
+            raise AttributeError
+        if name in self.EXTRA_ATTRIBUTES:
+            return self.EXTRA_ATTRIBUTES[name]
+        elif self.ALLOW_ALL_ATTRIBUTES and name in self._extra_attributes:
+            return self._extra_attributes.get(name)
+        raise AttributeError("No such attribute: {}".format(name))
+
+    # TODO: Catch addition of new attributes via setattr?
 
     def _with_attrs(self, **attrs):
         obj = copy.copy(self)
         for attr, value in attrs.items():
             if not hasattr(obj, attr):
-                raise ValueError("'{}' is not a valid feature attribute.".format(attr))
+                if self.ALLOW_ALL_ATTRIBUTES:
+                    self._extra_attributes[attr] = value
+                else:
+                    raise ValueError("'{}' is not a valid feature attribute.".format(attr))
             setattr(obj, attr, value)
         return obj
 
@@ -313,7 +420,9 @@ class _FeatureAttrsMixin(object):
             'implicit': self.implicit,
             'via': self.via,
             'kind': self.kind,
-            'mask': self.mask
+            'mask': self.mask,
+            'transforms': self.transforms,
+            **{name: getattr(self, name, self.EXTRA_ATTRIBUTES.get(name)) for name in list(self.EXTRA_ATTRIBUTES) + list(self._extra_attributes)}
         }
 
     @property
@@ -333,8 +442,20 @@ class _FeatureAttrsMixin(object):
     @mask.setter
     def mask(self, mask):
         if mask is not None and not re.match(r'^(?![0-9])[\w_:]+$', mask):
-            raise ValueError("Invalid feature mask '{}'. All maskes must consist only of word characters, numbers, underscores and colons, and cannot start with a number.".format(name))
+            raise ValueError("Invalid feature mask '{}'. All masks must consist only of word characters, numbers, underscores and colons, and cannot start with a number.".format(name))
         self._mask = mask
+
+    @property
+    def transforms(self):
+        return self._transforms or {}
+
+    @transforms.setter
+    def transforms(self, transforms):
+        # TODO: Check structure of transforms dict
+        if not transforms:
+            self._transforms = {}
+        else:
+            self._transforms = transforms
 
     @property
     def as_external(self):
@@ -402,15 +523,51 @@ class _FeatureAttrsMixin(object):
         if self.via:
             return self.via.split('/')[0]
 
+    # TODO: Use this hash to allow multiple measures based on same source measure
+    # @property
+    # def attr_hash(self):
+    #     if self.alias == self.mask:
+    #         return
+    #
+    #     return hashlib.sha256(
+    #         json.dumps(
+    #             {
+    #                 'alias': self.alias,
+    #                 **self._extra_attributes
+    #             }, sort_keys=True
+    #         )
+    #         .encode()
+    #     ).hexdigest()
+
     @property
     def via_name(self):
+        # TODO: Use this hash to allow multiple measures based on same source measure?
+        # hash_suffix = ("_{}".format(self.attr_hash) if self.attr_hash else '')
         if self.via:
             return '{}/{}'.format(self.via, self.mask)
         return self.mask
 
-    # Methods to assist MeasureProviders with handling data field names
-    def fieldname(self, role=None):
+    def via_alias(self, unit_type=None):
+        if not self.transforms:
+            return self.via_name
+        if unit_type and unit_type in self.transforms and self.transforms[unit_type].get('alias'):
+            return self.transforms[unit_type].get('alias')
+
+        if self.via:
+            unit_types = self.via.split('/')
+            for i, unit_type in enumerate(unit_types):
+                if unit_type in self.transforms and self.transforms[unit_type].get('alias'):
+                    return '/'.join(unit_types[:i + 1] + [self.transforms[unit_type].get('alias')])
+
         return self.via_name
+
+    # Methods to assist MeasureProviders with handling data field names
+    def fieldname(self, role=None, unit_type=None):
+        return self.via_alias(unit_type=unit_type)
+
+    def prev_fieldname(self, role=None):
+        if self.via:
+            return "/".join([self.next_unit_type, self.via_next.fieldname(role=role, unit_type=self.next_unit_type)])
 
     def __lt__(self, other):  # TODO: Where is this used?
         return self.name.__lt__(other.name)
@@ -472,6 +629,8 @@ class _ProvidedFeature(_FeatureAttrsMixin):
 
 
 class _ResolvedFeature(_FeatureAttrsMixin):
+
+    ALLOW_ALL_ATTRIBUTES = True
 
     def __init__(self, name, providers=[], **attrs):
         _FeatureAttrsMixin.__init__(self, name=name, **attrs)
@@ -628,13 +787,33 @@ class _Measure(_ProvidedFeature):
         _ProvidedFeature.__init__(self, name, expr=expr, default=default, desc=desc, shared=shared, provider=provider)
         self.distribution = distribution
 
-    def fieldname(self, role='measure'):
-        name = _ProvidedFeature.fieldname(self, role=role)
+    def transforms_for_unit_type(self, unit_type, stats_registry=None):
+        transforms = {
+            'pre_agg': None,
+            'agg': 'sum',
+            'post_agg': None,
+            'pre_rebase_agg': None,
+            'rebase_agg': 'sum',
+            'post_rebase_agg': None
+        }
+        if isinstance(self.transforms, dict):
+            transforms.update(self.transforms.get(unit_type, {}))
+
+        backend_aggs = stats_registry.aggregations.for_provider(self.provider)
+
+        for key in ['agg', 'rebase_agg']:
+            if transforms[key] is not None:
+                transforms[key] = backend_aggs[transforms[key]]
+
+        return transforms
+
+    def fieldname(self, role='measure', unit_type=None):
+        name = _ProvidedFeature.fieldname(self, role=role, unit_type=unit_type)
         if role == 'measure':
-            return '{}|sum'.format(name)
+            return '{}|raw'.format(name)
         return name
 
-    def get_fields(self, stats=True, unit_agg=False, stats_registry=None, for_pandas=False):
+    def get_fields(self, unit_type=None, stats=True, rebase_agg=False, stats_registry=None, for_pandas=False):
         """
         This is a convenience method for subclasses to use to get the
         target fields associated with a particular distribution.
@@ -649,28 +828,33 @@ class _Measure(_ProvidedFeature):
                 sampled.
         """
         assert stats_registry is not None
-        assert not (unit_agg and stats)
+        assert not (rebase_agg and stats)
         if for_pandas:
             from mensor.backends.pandas import PandasMeasureProvider
             provider = PandasMeasureProvider
         else:
             provider = self.provider
-        distribution = self.distribution if stats else None
-        return OrderedDict([
-            (
+
+        if stats:
+            return OrderedDict([
                 (
-                    "{via_name}|{field_name}".format(via_name=self.via_name, field_name=field_name)
-                    if distribution is None else
-                    "{via_name}|{dist_name}|{field_name}".format(via_name=self.via_name, field_name=field_name, dist_name=distribution.lower())
-                ),
-                agg_method
-            )
-            for field_name, agg_method in stats_registry.distribution_for_provider(distribution, provider).items()
-        ])
+                    (
+                        "{via_name}|{field_name}".format(via_name=self.fieldname(role=None, unit_type=unit_type if not rebase_agg else None), field_name=field_name)
+                        if self.distribution is None else
+                        "{via_name}|{dist_name}|{field_name}".format(via_name=self.fieldname(role=None, unit_type=unit_type if not rebase_agg else None), field_name=field_name, dist_name=self.distribution.lower())
+                    ),
+                    agg_method
+                )
+                for field_name, agg_method in stats_registry.distribution_for_provider(self.distribution, provider).items()
+            ])
+        else:
+            return OrderedDict([
+                ('{fieldname}|raw'.format(fieldname=self.fieldname(role=None, unit_type=unit_type if not rebase_agg else None)), self.transforms_for_unit_type(unit_type, stats_registry=stats_registry)['rebase_agg' if rebase_agg else 'agg'])
+            ])
 
     @classmethod
-    def get_all_fields(self, measures, stats=True, unit_agg=False, stats_registry=None, for_pandas=False):
+    def get_all_fields(self, measures, unit_type=None, stats=True, rebase_agg=False, stats_registry=None, for_pandas=False):
         fields = []
         for measure in measures:
-            fields.extend(measure.get_fields(stats=stats, unit_agg=unit_agg, stats_registry=stats_registry, for_pandas=for_pandas))
+            fields.extend(measure.get_fields(unit_type=unit_type, stats=stats, rebase_agg=rebase_agg, stats_registry=stats_registry, for_pandas=for_pandas))
         return fields

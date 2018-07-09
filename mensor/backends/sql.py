@@ -256,14 +256,14 @@ class SQLMeasureProvider(MeasureProvider):
 
     def _get_ir(self, unit_type, measures, segment_by, where, joins, stats_registry, stats, covariates, **opts):
         field_map = self._field_map(unit_type, measures, segment_by, joins)
-        unit_agg = not unit_type.is_unique
+        rebase_agg = not unit_type.is_unique
         sql = self._template_environment.get_template(self.dialect.TEMPLATE_BASE).render(
             _sql=self._sql(unit_type=unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, stats=stats, covariates=covariates, **opts),
             field_map=field_map,
             provider=self,
             table_name=self._table_name(unit_type),
             dimensions=self._get_dimensions_sql(field_map, segment_by),
-            measures=self._get_measures_sql(field_map, measures, unit_agg, stats_registry, stats, covariates),
+            measures=self._get_measures_sql(field_map, measures, rebase_agg, stats_registry, stats, covariates),
             groupby=self._get_groupby_sql(field_map, segment_by),
             joins=joins,
             constraints=self._get_where_sql(field_map, where),
@@ -325,15 +325,15 @@ class SQLMeasureProvider(MeasureProvider):
                 )
         return dims
 
-    def _get_measures_sql(self, field_map, measures, unit_agg, stats_registry, stats, covariates):
+    def _get_measures_sql(self, field_map, measures, rebase_agg, stats_registry, stats, covariates):
         aggs = []
 
-        if unit_agg and stats:
+        if rebase_agg and stats:
             raise NotImplementedError("Computing stats and rebasing units simultaneously has not been implemented for the SQL backend.")
         else:
             for measure in measures:
                 if not measure.private:
-                    for fieldname, col_map in measure.get_fields(stats=stats, stats_registry=stats_registry, unit_agg=unit_agg).items():
+                    for fieldname, col_map in measure.get_fields(stats=stats, stats_registry=stats_registry, rebase_agg=rebase_agg).items():
                         aggs.append(
                             '{col_op} AS {f}'.format(
                                 col_op=col_map('1' if measure == 'count' else field_map['measures'][measure.via_name], self.dialect),

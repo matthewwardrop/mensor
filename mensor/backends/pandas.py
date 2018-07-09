@@ -46,6 +46,7 @@ class PandasMeasureProvider(MeasureProvider):
         assert stats_registry is not None
         assert not any(measure.external for measure in measures)
         assert not any(dimension.external for dimension in segment_by)
+        rebase_agg = not unit_type.is_unique
 
         raw_data = (
             self.data
@@ -55,23 +56,23 @@ class PandasMeasureProvider(MeasureProvider):
         df = (
             pd.DataFrame()
             .assign(**{
-                dimension.fieldname(role='dimension'): raw_data.eval(dimension.expr) for dimension in segment_by
+                dimension.fieldname(role='dimension', unit_type=unit_type if not rebase_agg else None): raw_data.eval(dimension.expr) for dimension in segment_by
             })
             .assign(**{
-                measure.fieldname(role='measure'): raw_data.eval(measure.expr) for measure in measures
+                measure.fieldname(role='measure', unit_type=unit_type if not rebase_agg else None): raw_data.eval(measure.expr) for measure in measures
             })
         )
 
         return (
             self._finalise_dataframe(
-                df, measures=measures, segment_by=segment_by, where=where,
-                stats_registry=stats_registry, stats=stats, unit_agg=not unit_type.is_unique
+                df, unit_type=unit_type, measures=measures, segment_by=segment_by, where=where,
+                stats_registry=stats_registry, stats=stats, rebase_agg=rebase_agg
             )
         )
 
     @classmethod
-    def _finalise_dataframe(cls, df, measures, segment_by, where, stats_registry=None,
-                            stats=False, unit_agg=True, reagg=False):
+    def _finalise_dataframe(cls, df, unit_type, measures, segment_by, where, stats_registry=None,
+                            stats=False, rebase_agg=True, reagg=False):
         """
         This method finalises a `pandas.DataFrame` instance by applying the
         following steps:
@@ -81,7 +82,7 @@ class PandasMeasureProvider(MeasureProvider):
         2) Ensuring that all private measures and dimensions are removed.
         3) Performing an aggregation over the measures segmented by the features
            identified in `segment_by`. This is done in one of two ways:
-           A) if `unit_agg` is `True`, a unit aggregation is performed.
+           A) if `rebase_agg` is `True`, a unit aggregation is performed.
            B) otherwise, a regular (summed) aggregation is performed. If `stats`
               is `True`, statistics about this aggregation are retained.
         4) If a unit aggregation was performed, and `stats` is True, repeat the
@@ -95,11 +96,11 @@ class PandasMeasureProvider(MeasureProvider):
         # Apply defaults, if required
         for measure in measures:
             if measure.default is not None:
-                df[measure.fieldname(role='measure')].fillna(measure.default, inplace=True)
+                df[measure.fieldname(role='measure', unit_type=unit_type if not rebase_agg else None)].fillna(measure.default, inplace=True)
 
         for dimension in segment_by:
             if dimension.default is not None:
-                df[dimension.fieldname(role='dimension')].fillna(dimension.default, inplace=True)
+                df[dimension.fieldname(role='dimension', unit_type=unit_type if not rebase_agg else None)].fillna(dimension.default, inplace=True)
 
         # Apply constraints
         if where:
@@ -108,7 +109,7 @@ class PandasMeasureProvider(MeasureProvider):
         # Remove any private measures and segments
         for measure in measures:
             if measure.private:
-                df.drop(list(measure.get_fields(stats=False, stats_registry=stats_registry)), axis=1)
+                df.drop(list(measure.get_fields(unit_type=unit_type, stats=False, stats_registry=stats_registry)), axis=1)
         for dimension in segment_by:
             if dimension.private:
                 df.drop(dimension.via_name, axis=1)
@@ -116,26 +117,26 @@ class PandasMeasureProvider(MeasureProvider):
         measures = [m for m in measures if not m.private]
         segment_by = [s for s in segment_by if not s.private]
 
-        if unit_agg:
-            df = cls._dataframe_agg(df, measures, segment_by, unit_agg=True, stats_registry=stats_registry, stats=False)
+        if rebase_agg:
+            df = cls._dataframe_agg(df, unit_type, measures, segment_by, rebase_agg=True, stats_registry=stats_registry, stats=False)
 
-        if not unit_agg or stats:
-            df = cls._dataframe_agg(df, measures, segment_by, unit_agg=False, stats_registry=stats_registry, stats=stats, reagg=reagg)
+        if not rebase_agg or stats:
+            df = cls._dataframe_agg(df, unit_type, measures, segment_by, rebase_agg=False, stats_registry=stats_registry, stats=stats, reagg=reagg)
 
         return df
 
     @classmethod
-    def _dataframe_agg(cls, df, measures, segment_by, unit_agg=False,
+    def _dataframe_agg(cls, df, unit_type, measures, segment_by, rebase_agg=False,
                        stats_registry=None, stats=False, reagg=False):
 
-        measure_cols = _Measure.get_all_fields(measures, unit_agg=unit_agg, stats=stats, stats_registry=stats_registry)
-        segment_by_cols = [s.fieldname(role='dimension') for s in segment_by]
+        measure_cols = _Measure.get_all_fields(measures, unit_type=unit_type, rebase_agg=rebase_agg, stats=stats, stats_registry=stats_registry)
+        segment_by_cols = [s.fieldname(role='dimension', unit_type=unit_type if not rebase_agg else None) for s in segment_by]
 
         if len(df) == 0:
             return pd.DataFrame([], columns=measure_cols + segment_by_cols)
 
         measure_cols, measure_aggs = cls._measure_agg_maps(
-            measures, external=True, unit_agg=unit_agg, stats=stats, stats_registry=stats_registry, reagg=reagg
+            unit_type, measures, external=True, rebase_agg=rebase_agg, stats=stats, stats_registry=stats_registry, reagg=reagg
         )
 
         if isinstance(df, pd.Series):
@@ -173,7 +174,7 @@ class PandasMeasureProvider(MeasureProvider):
 
     # Aggregation related methods
     @classmethod
-    def _measure_agg_maps(cls, measures, external=True, unit_agg=False, stats=False, stats_registry=None, reagg=False):
+    def _measure_agg_maps(cls, unit_type, measures, external=True, rebase_agg=False, stats=False, stats_registry=None, reagg=False):
         def measure_map(name, op):
             return lambda df: op(df[name])
         col_maps = {}
@@ -181,9 +182,9 @@ class PandasMeasureProvider(MeasureProvider):
         for measure in measures:
             if not external and measure.external:
                 continue
-            for field_name, (col_agg, col_map) in measure.get_fields(stats=stats, unit_agg=unit_agg, stats_registry=stats_registry, for_pandas=True).items():
+            for field_name, (col_agg, col_map) in measure.get_fields(unit_type=unit_type, stats=stats, rebase_agg=rebase_agg, stats_registry=stats_registry, for_pandas=True).items():
                 col_aggs[field_name] = functools.partial(pd.Series.sum, min_count=1) if reagg else col_agg
-                col_maps[field_name] = measure_map(measure.fieldname(role='measure'), (lambda x: x) if reagg else col_map)
+                col_maps[field_name] = measure_map(measure.prev_fieldname(role='measure') or measure.fieldname(role='measure', unit_type=unit_type if not rebase_agg else None), (lambda x: x) if reagg else col_map)
         return col_maps, col_aggs
 
     #  Constraint related methods

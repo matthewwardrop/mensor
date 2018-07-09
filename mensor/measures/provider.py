@@ -396,7 +396,7 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
                     )
 
             # Check columns in resulting dataframe
-            expected_columns = _Measure.get_all_fields(measures_post, stats_registry=stats_registry, stats=False) + [f.via_name for f in segment_by_post]
+            expected_columns = _Measure.get_all_fields(measures_post, unit_type=unit_type, rebase_agg=True, stats_registry=stats_registry, stats=False) + [f.via_name for f in segment_by_post]
             excess_columns = set(result.columns).difference(expected_columns)
             missing_columns = set(expected_columns).difference(result.columns)
             if len(excess_columns):  # remove any unnecessary columns (such as now used join keys)
@@ -407,12 +407,12 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
             # All new joined in measures need to be multiplied by the count series of
             # this dataframe, so that they are properly weighted.
             if len(joined_measure_fields) > 0:
-                result = result.apply(lambda col: result['count|sum'] * col if col.name in joined_measure_fields else col, axis=0)
+                result = result.apply(lambda col: result['count|raw'] * col if col.name in joined_measure_fields else col, axis=0)
 
             result = PandasMeasureProvider._finalise_dataframe(
-                df=result, measures=measures_post, segment_by=segment_by_post,
+                df=result, unit_type=unit_type, measures=measures_post, segment_by=segment_by_post,
                 where=where_post, stats=stats, stats_registry=stats_registry,
-                unit_agg=False, reagg=False
+                rebase_agg=False, reagg=False
             )
 
         return EvaluatedMeasures.for_measures(result, stats_registry=stats_registry)
