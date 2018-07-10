@@ -263,7 +263,7 @@ class SQLMeasureProvider(MeasureProvider):
             provider=self,
             table_name=self._table_name(unit_type),
             dimensions=self._get_dimensions_sql(field_map, segment_by),
-            measures=self._get_measures_sql(field_map, measures, rebase_agg, stats_registry, stats, covariates),
+            measures=self._get_measures_sql(field_map, unit_type, measures, rebase_agg, stats_registry, stats, covariates),
             groupby=self._get_groupby_sql(field_map, segment_by),
             joins=joins,
             constraints=self._get_where_sql(field_map, where),
@@ -325,7 +325,7 @@ class SQLMeasureProvider(MeasureProvider):
                 )
         return dims
 
-    def _get_measures_sql(self, field_map, measures, rebase_agg, stats_registry, stats, covariates):
+    def _get_measures_sql(self, field_map, unit_type, measures, rebase_agg, stats_registry, stats, covariates):
         aggs = []
 
         if rebase_agg and stats:
@@ -333,10 +333,18 @@ class SQLMeasureProvider(MeasureProvider):
         else:
             for measure in measures:
                 if not measure.private:
-                    for fieldname, col_map in measure.get_fields(stats=stats, stats_registry=stats_registry, rebase_agg=rebase_agg).items():
+                    for fieldname, transforms in measure.get_fields(unit_type=unit_type, stats=stats, stats_registry=stats_registry, rebase_agg=rebase_agg).items():
+
+                        field = '1' if measure == 'count' else field_map['measures'][measure.via_name]
+                        if transforms.get('pre_agg'):
+                            field = transforms['pre_agg'](field, self.dialect)
+                        field = transforms['agg'](field, self.dialect)
+                        if transforms.get('post_agg'):
+                            field = transforms['post_agg'](field, self.dialect)
+
                         aggs.append(
                             '{col_op} AS {f}'.format(
-                                col_op=col_map('1' if measure == 'count' else field_map['measures'][measure.via_name], self.dialect),
+                                col_op=field,
                                 f=self._col(fieldname),
                             )
                         )

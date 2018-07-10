@@ -135,7 +135,7 @@ class PandasMeasureProvider(MeasureProvider):
         if len(df) == 0:
             return pd.DataFrame([], columns=measure_cols + segment_by_cols)
 
-        measure_cols, measure_aggs = cls._measure_agg_maps(
+        measure_pre_aggs, measure_aggs, measure_post_aggs = cls._measure_agg_maps(
             unit_type, measures, external=True, rebase_agg=rebase_agg, stats=stats, stats_registry=stats_registry, reagg=reagg
         )
 
@@ -152,7 +152,7 @@ class PandasMeasureProvider(MeasureProvider):
         if len(segment_by_cols) > 0 and len(measure_cols) > 0:
             df = (
                 df
-                .assign(**measure_cols)
+                .assign(**measure_pre_aggs)
                 [segment_by_cols + list(measure_cols)]
                 .groupby(segment_by_cols)
                 .agg(measure_aggs)
@@ -168,24 +168,40 @@ class PandasMeasureProvider(MeasureProvider):
                 [segment_by_cols]
             )
         else:
-            df = df.assign(**measure_cols)[list(measure_cols)].agg(measure_aggs)
+            df = df.assign(**measure_pre_aggs)[list(measure_cols)].agg(measure_aggs)
 
         return df
 
     # Aggregation related methods
     @classmethod
     def _measure_agg_maps(cls, unit_type, measures, external=True, rebase_agg=False, stats=False, stats_registry=None, reagg=False):
-        def measure_map(name, op):
-            return lambda df: op(df[name])
-        col_maps = {}
+
+        def measure_map(name, *ops):
+            def apply(df):
+                col = df[name]
+                for op in ops:
+                    col = op(col)
+                return col
+            return apply
+
+        col_preaggs = {}
         col_aggs = {}
+        col_postaggs = {}
+
         for measure in measures:
             if not external and measure.external:
                 continue
-            for field_name, (col_agg, col_map) in measure.get_fields(unit_type=unit_type, stats=stats, rebase_agg=rebase_agg, stats_registry=stats_registry, for_pandas=True).items():
+            for field_name, transforms in measure.get_fields(unit_type=unit_type, stats=stats, rebase_agg=rebase_agg, stats_registry=stats_registry, for_pandas=True).items():
+                col_agg, col_map = transforms['agg']
                 col_aggs[field_name] = functools.partial(pd.Series.sum, min_count=1) if reagg else col_agg
-                col_maps[field_name] = measure_map(measure.prev_fieldname(role='measure') or measure.fieldname(role='measure', unit_type=unit_type if not rebase_agg else None), (lambda x: x) if reagg else col_map)
-        return col_maps, col_aggs
+
+                preaggs = ([transforms['pre_agg']] if transforms.get('pre_agg') else []) + [ (lambda x: x) if reagg else col_map ]
+                col_preaggs[field_name] = measure_map(measure.prev_fieldname(role='measure') or measure.fieldname(role='measure', unit_type=unit_type if not rebase_agg else None), *preaggs)
+
+                if transforms.get('post_agg'):
+                    col_postaggs[fieldname] = measure_map(field_name, transforms['post_agg'])
+
+        return col_preaggs, col_aggs, col_postaggs
 
     #  Constraint related methods
     @classmethod

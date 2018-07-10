@@ -800,10 +800,15 @@ class _Measure(_ProvidedFeature):
             transforms.update(self.transforms.get(unit_type, {}))
 
         backend_aggs = stats_registry.aggregations.for_provider(self.provider)
+        transform_ops = stats_registry.transforms.for_provider(self.provider)
 
         for key in ['agg', 'rebase_agg']:
             if transforms[key] is not None:
                 transforms[key] = backend_aggs[transforms[key]]
+
+        for key in ['pre_agg', 'post_agg', 'pre_rebase_agg', 'post_rebase_agg']:
+            if transforms[key] is not None:
+                transforms[key] = transform_ops[transforms[key]]
 
         return transforms
 
@@ -836,6 +841,7 @@ class _Measure(_ProvidedFeature):
             provider = self.provider
 
         if stats:
+            transforms = self.transforms_for_unit_type(unit_type, stats_registry=stats_registry)
             return OrderedDict([
                 (
                     (
@@ -843,13 +849,24 @@ class _Measure(_ProvidedFeature):
                         if self.distribution is None else
                         "{via_name}|{dist_name}|{field_name}".format(via_name=self.fieldname(role=None, unit_type=unit_type if not rebase_agg else None), field_name=field_name, dist_name=self.distribution.lower())
                     ),
-                    agg_method
+                    {
+                        'pre_agg': transforms['pre_agg'],
+                        'agg': agg_method
+                    }
                 )
                 for field_name, agg_method in stats_registry.distribution_for_provider(self.distribution, provider).items()
             ])
         else:
+            transforms = self.transforms_for_unit_type(unit_type, stats_registry=stats_registry)
             return OrderedDict([
-                ('{fieldname}|raw'.format(fieldname=self.fieldname(role=None, unit_type=unit_type if not rebase_agg else None)), self.transforms_for_unit_type(unit_type, stats_registry=stats_registry)['rebase_agg' if rebase_agg else 'agg'])
+                (
+                    '{fieldname}|raw'.format(fieldname=self.fieldname(role=None, unit_type=unit_type if not rebase_agg else None)),
+                    {
+                        'agg': transforms['rebase_agg'] if rebase_agg else transforms['agg'],
+                        'pre_agg': transforms['pre_rebase_agg'] if rebase_agg else transforms['pre_agg'],
+                        'post_agg': transforms['post_rebase_agg'] if rebase_agg else transforms['post_agg'],
+                    }
+                )
             ])
 
     @classmethod

@@ -224,6 +224,7 @@ class EvaluationStrategy(object):
                         segment_by=self.segment_by,
                         where=self.where,
                         joins=joins,
+                        stats_registry=self.registry._stats_registry,
                         stats=stats,
                         **opts
                     ),
@@ -240,6 +241,7 @@ class EvaluationStrategy(object):
                 segment_by=self.segment_by,
                 where=self.where,
                 joins=joins,
+                stats_registry=self.registry._stats_registry,
                 stats=stats,
                 **opts
             )
@@ -250,6 +252,7 @@ class EvaluationStrategy(object):
                 segment_by=self.segment_by,
                 where=self.where,
                 joins=joins,
+                stats_registry=self.registry._stats_registry,
                 stats=stats,
                 **opts
             )

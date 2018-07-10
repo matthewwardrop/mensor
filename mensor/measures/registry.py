@@ -161,11 +161,11 @@ class MeasureRegistry(MeasureEvaluator):
         return provider
 
     # Transform registration
-    def register_transform(transform, name=None, backend=None):
-        return self._stats_registry.transforms.register(transform, name=name, backend=backend)
+    def register_transform(self, transform, name=None, backend=None):
+        return self._stats_registry.transforms.register(transform=transform, name=name, backend=backend)
 
-    def register_agg(agg, name=None, backend=None):
-        return self._stats_registry.aggregations.register(transform, name=name, backend=backend)
+    def register_agg(self, agg, name=None, backend=None):
+        return self._stats_registry.aggregations.register(agg=agg, name=name, backend=backend)
 
     @property
     def unit_types(self):
