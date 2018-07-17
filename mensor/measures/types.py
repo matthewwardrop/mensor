@@ -296,17 +296,17 @@ class EvaluatedMeasures(object):
 
         stats = self._stats_registry.distributions.get_scipy_repr(distribution)
 
-        try:
-            if isinstance(stats, tuple):
-                model = stats[0]
+        if isinstance(stats, tuple):
+            model = stats[0]
+            if model:
                 params = {
                     param: f(*distribution_fields) for param, f in stats[1].items()
                 }
                 return pd.Series(uarray(model.mean(**params), model.std(**params)), name=name, index=self.raw.index)
-            else:
-                return pd.Series(stats(*distribution_fields), name=name, index=self.raw.index)
-        except:
-            return pd.Series(np.nan, index=self.raw.index)
+        elif stats:
+            return pd.Series(stats(*distribution_fields), name=name, index=self.raw.index)
+
+        return distribution_fields[0]  # If no stats, return raw sum field
 
     # Allow getting measures by distribution stats
     def __getitem__(self, name):
