@@ -97,6 +97,17 @@ class MeasureMetric(Metric):
     def required_measures(self):
         return [self.opts['measure']] + (['count'] if self.opts['mean'] else [])
 
+    def __repr_expr__(self):
+        return f"`{self.opts['measure']}` / `count`" if self.opts['mean'] else f"`{self.opts['measure']}`"
+
+    def __repr_dist__(self):
+        return (
+            "𝒩(μ, σ²): μ = expected value of above expression; "
+            "σ = standard error of the {}".format(
+                "mean" if self.opts['mean'] else "sum"
+            )
+        )
+
 
 class RatioMetric(Metric):
 
@@ -111,3 +122,12 @@ class RatioMetric(Metric):
     @property
     def required_measures(self):
         return [self.opts['numerator'], self.opts['denominator']]
+
+    def __repr_expr__(self):
+        return f"`{self.opts['numerator']}` / `{self.opts['denominator']}`"
+
+    def __repr_dist__(self):
+        return (
+            "𝒩(μ, σ²): μ = expected value of above expression; "
+            "σ = standard error of Taylor expansion to second order"
+        )

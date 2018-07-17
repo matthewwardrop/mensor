@@ -181,3 +181,15 @@ class MetricRegistry(object):
         #     required_marginal_segmentation = set(strategy.segment_by).difference(segment_by)  # Todo: check case when required_dimensions is not empty
         #
         #     yield strategy_for_metrics(compatible), required_marginal_segmentation, compatible
+
+    def show(self, unit_type=None, detailed=False):
+        if unit_type and not isinstance(unit_type, list):
+            unit_type = [unit_type]
+
+        for name in sorted(self._metrics):
+            metric = self._metrics[name]
+            if not unit_type or unit_type and metric.unit_type in unit_type:
+                if detailed:
+                    metric.show()
+                else:
+                    print(f" - {name} [{metric.unit_type}]" + (": {metric.desc}" if metric.desc else ""))

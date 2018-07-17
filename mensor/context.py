@@ -36,12 +36,23 @@ class EvaluationContext(object):
     def constraints(self, constraints):
         self._constraints = Constraint.from_spec(constraints)
 
-    def evaluate(self, *args, where=None, **kwargs):
-        return self.metrics.evaluate(
+    def evaluate(self, *args, where=None, ir_only=False, **kwargs):
+        if ir_only:
+            f = self.metrics.get_ir
+        else:
+            f = self.metrics.evaluate
+        return f(
             *args, where=self.constraints & Constraint.from_spec(where), measure_opts={'context': self.context}, **kwargs
         )
 
-    def evaluate_measures(self, *args, where=None, **kwargs):
-        return self.measures.evaluate(
+    def evaluate_measures(self, *args, where=None, ir_only=False, **kwargs):
+        if ir_only:
+            f = self.measures.get_ir
+        else:
+            f = self.measures.evaluate
+        return f(
             *args, where=self.constraints & Constraint.from_spec(where), context=self.context, **kwargs
         )
+
+    def __repr__(self):
+        return "{}<contraints={}, context={}>".format(self.__class__.__name__, self.constraints, self.context)
