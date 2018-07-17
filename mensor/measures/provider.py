@@ -1,11 +1,10 @@
 import itertools
 import os
 
-import pandas as pd
 import yaml
 
 from mensor.constraints import CONSTRAINTS, And, Constraint
-from mensor.utils import AttrDict, SequenceMap
+from mensor.utils import SequenceMap
 from mensor.utils.registry import SubclassRegisteringABCMeta
 
 from .stats import global_stats_registry

@@ -1,5 +1,3 @@
-import functools
-
 from mensor.metrics import Metric
 from mensor.backends.sql import SimpleSQLMetricImplementation
 

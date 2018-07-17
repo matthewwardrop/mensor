@@ -3,8 +3,6 @@ import re
 from abc import ABCMeta, abstractmethod, abstractproperty
 from enum import Enum
 
-import six
-
 
 class CONSTRAINTS(Enum):
     NULL = 'null'

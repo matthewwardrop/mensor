@@ -1,7 +1,7 @@
 import os
 import unittest
 
-from mensor.constraints import BaseConstraint, Constraint
+from mensor.constraints import Constraint
 from mensor.measures.registry import MeasureRegistry
 from mensor.measures.strategy import STRATEGY_TYPE
 from mensor.backends.pandas import PandasMeasureProvider

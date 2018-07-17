@@ -1,24 +1,19 @@
 import copy
-import hashlib
-import json
 import re
 from abc import ABCMeta, abstractmethod
 from collections import OrderedDict, namedtuple
-from enum import Enum
 
 import numpy as np
 import pandas as pd
-import scipy.stats.distributions
 import six
 import yaml
-from uncertainties import ufloat
 from uncertainties.unumpy import uarray
 
 from mensor.utils import startseq_match, OptionsMixin, SequenceMap
 
 from .stats import global_stats_registry
 
-__all__ = ['Join', '_Dimension', '_StatisticalUnitIdentifier', '_Measure', 'MeasureDataFrame']
+__all__ = ['Join', '_Dimension', '_StatisticalUnitIdentifier', '_Measure', 'EvaluatedMeasures']
 
 
 class MeasureEvaluator(OptionsMixin, metaclass=ABCMeta):
@@ -442,7 +437,7 @@ class _FeatureAttrsMixin(object):
     @mask.setter
     def mask(self, mask):
         if mask is not None and not re.match(r'^(?![0-9])[\w_:]+$', mask):
-            raise ValueError("Invalid feature mask '{}'. All masks must consist only of word characters, numbers, underscores and colons, and cannot start with a number.".format(name))
+            raise ValueError("Invalid feature mask '{}'. All masks must consist only of word characters, numbers, underscores and colons, and cannot start with a number.".format(mask))
         self._mask = mask
 
     @property

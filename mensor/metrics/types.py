@@ -1,7 +1,5 @@
-import inspect
 import os
-from abc import ABCMeta, abstractmethod, abstractproperty
-from collections import OrderedDict
+from abc import abstractmethod, abstractproperty
 
 import yaml
 

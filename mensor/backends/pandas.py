@@ -38,7 +38,7 @@ class PandasMeasureProvider(MeasureProvider):
     def data(self):
         if self._data_transform is None:
             return self._data
-        return data_transform(self, self._data, self.provisions)
+        return self._data_transform(self, self._data, self.provisions)
 
     def _evaluate(self, unit_type, measures, where=None, segment_by=None,
                   stats_registry=None, stats=True, covariates=False, **opts):
@@ -195,11 +195,11 @@ class PandasMeasureProvider(MeasureProvider):
                 col_agg, col_map = transforms['agg']
                 col_aggs[field_name] = functools.partial(pd.Series.sum, min_count=1) if reagg else col_agg
 
-                preaggs = ([transforms['pre_agg']] if transforms.get('pre_agg') else []) + [ (lambda x: x) if reagg else col_map ]
+                preaggs = ([transforms['pre_agg']] if transforms.get('pre_agg') else []) + [(lambda x: x) if reagg else col_map]
                 col_preaggs[field_name] = measure_map(measure.prev_fieldname(role='measure') or measure.fieldname(role='measure', unit_type=unit_type if not rebase_agg else None), *preaggs)
 
                 if transforms.get('post_agg'):
-                    col_postaggs[fieldname] = measure_map(field_name, transforms['post_agg'])
+                    col_postaggs[field_name] = measure_map(field_name, transforms['post_agg'])
 
         return col_preaggs, col_aggs, col_postaggs
 
