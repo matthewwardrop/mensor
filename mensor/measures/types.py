@@ -130,7 +130,7 @@ class FeatureSpec:
         self._transforms = transforms or {}
 
     def __repr__(self):
-        return "<Measure" + (f"[{self.alias}]" if self.alias else "") + (" (with transforms)" if self.transforms else "") + ">"
+        return "<Measure" + ("[{alias}]".format(alias=self.alias) if self.alias else "") + (" (with transforms)" if self.transforms else "") + ">"
 
     def source(self, source):
         self._source = source

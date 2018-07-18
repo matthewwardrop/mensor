@@ -113,7 +113,7 @@ class Metric(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
 
     # Documentation and description
     def __repr__(self):
-        return f"{self.__class__.__name__}<{self.name}>"
+        return "{}<{}>".format(self.__class__.__name__, self.name)
 
     def __repr_expr__(self):
         return "function(`{}`)".format('`, `'.join(self.required_measures))
@@ -123,17 +123,17 @@ class Metric(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
 
     def show(self):
         print(self.name)
-        print(f"\tUnit Type: {self.unit_type}")
+        print("\tUnit Type: {}".format(self.unit_type))
         if self.__repr_expr__():
-            print(f"\tExpression: {self.__repr_expr__()}")
+            print("\tExpression: {}".format(self.__repr_expr__()))
         if self.__repr_dist__():
-            print(f"\tDistribution: {self.__repr_dist__()}")
+            print("\tDistribution: {}".format(self.__repr_dist__()))
         if self.required_segmentation:
             print("\tRequired segmentation:")
             for dimension in self.required_segmentation:
-                print(f"\t- {dimension}")
+                print("\t- {}".format(dimension))
         if self.required_constraints:
-            print("\tRequired constraints: {self.required_constraints}")
+            print("\tRequired constraints: {}".format(self.required_constraints))
 
 
 class CustomMetric(Metric):

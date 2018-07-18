@@ -192,4 +192,4 @@ class MetricRegistry(object):
                 if detailed:
                     metric.show()
                 else:
-                    print(f" - {name} [{metric.unit_type}]" + (": {metric.desc}" if metric.desc else ""))
+                    print(" - {name} [{unit_type}]".format(name=name, unit_type=metric.unit_type) + (": {}".format(metric.desc) if metric.desc else ""))

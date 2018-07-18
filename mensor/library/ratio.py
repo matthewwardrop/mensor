@@ -98,7 +98,7 @@ class MeasureMetric(Metric):
         return [self.opts['measure']] + (['count'] if self.opts['mean'] else [])
 
     def __repr_expr__(self):
-        return f"`{self.opts['measure']}` / `count`" if self.opts['mean'] else f"`{self.opts['measure']}`"
+        return "`{measure}` / `count`".format(measure=self.opts['measure']) if self.opts['mean'] else "`{measure}`".format(measure=self.opts['measure'])
 
     def __repr_dist__(self):
         return (
@@ -124,7 +124,7 @@ class RatioMetric(Metric):
         return [self.opts['numerator'], self.opts['denominator']]
 
     def __repr_expr__(self):
-        return f"`{self.opts['numerator']}` / `{self.opts['denominator']}`"
+        return "`{numerator}` / `{denominator}`".format(numerator=self.opts['numerator'], denominator=self.opts['denominator'])
 
     def __repr_dist__(self):
         return (
