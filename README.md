@@ -1,9 +1,9 @@
 # Mensor
+[![PyPI Version](https://img.shields.io/pypi/v/mensor.svg)](https://pypi.org/project/mensor/)
+![Project Status](https://img.shields.io/pypi/status/mensor.svg)
+![Python Versions](https://img.shields.io/pypi/pyversions/mensor.svg)
 [![Build Status](https://travis-ci.org/airbnb/mensor.svg?branch=master)](https://travis-ci.org/airbnb/mensor)
 [![Documentation Status](https://readthedocs.org/projects/mensor/badge/?version=latest)](http://mensor.readthedocs.io/en/latest/?badge=latest)
-![Project Status](https://img.shields.io/pypi/status/mensor.svg)
-[![PyPI Version](https://img.shields.io/pypi/v/mensor.svg)](https://pypi.org/project/mensor/)
-![Python Versions](https://img.shields.io/pypi/pyversions/mensor.svg)
 [![License](https://img.shields.io/github/license/airbnb/mensor.svg)](https://github.com/airbnb/mensor/blob/master/LICENSE)
 
 Mensor is a graph-based computation engine for computing measures and metrics.
