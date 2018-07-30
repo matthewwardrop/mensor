@@ -146,8 +146,8 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
     def identifiers(self, identifiers):
         self._identifiers = self._get_dimensions_from_specs(_StatisticalUnitIdentifier, identifiers)
 
-    def provides_identifier(self, unit_type=None, expr=None, desc=None, role='foreign', dummy=False):
-        identifier = _StatisticalUnitIdentifier(unit_type, expr=expr, desc=desc, role=role, dummy=dummy, provider=self)
+    def provides_identifier(self, unit_type=None, expr=None, desc=None, role='foreign', relation=False):
+        identifier = _StatisticalUnitIdentifier(unit_type, expr=expr, desc=desc, role=role, relation=relation, provider=self)
         self._identifiers.append(identifier)
         return self
 

@@ -702,13 +702,13 @@ class _Dimension(_ProvidedFeature):
 
 class _StatisticalUnitIdentifier(_ProvidedFeature):
 
-    def __init__(self, name, expr=None, desc=None, role='foreign', dummy=False, provider=None):
-        _ProvidedFeature.__init__(self, name, expr=expr, desc=desc, shared=not dummy, provider=provider)
+    def __init__(self, name, expr=None, desc=None, role='foreign', relation=False, provider=None):
+        _ProvidedFeature.__init__(self, name, expr=expr, desc=desc, shared=not relation, provider=provider)
         assert role in ('primary', 'unique', 'foreign')
-        if dummy:
+        if relation:
             assert role == 'primary', "Dummy identifiers currently only makes sense when it is to be treated as primary."
         self.role = role
-        self._dummy = dummy
+        self._relation = relation
 
     @property
     def unit_type(self):
@@ -727,9 +727,9 @@ class _StatisticalUnitIdentifier(_ProvidedFeature):
         return self.role in ('primary', 'unique')
 
     @property
-    def is_dummy(self):
+    def is_relation(self):
         """
-        If a unit type is a dummy, then it can never be linked to actual data,
+        If a unit type is a relation, then it can never be linked to actual data,
         which has the following consequences:
         - The dimensions associated with it can never be used via foreign keys.
         - It cannot be used as a member of `segment_by` in an evaluation.
@@ -741,7 +741,7 @@ class _StatisticalUnitIdentifier(_ProvidedFeature):
 
         Note that data is still accessible via reverse foreign keys.
         """
-        return self._dummy
+        return self._relation
 
     def __repr__(self):
         prefix = suffix = ''
@@ -749,8 +749,8 @@ class _StatisticalUnitIdentifier(_ProvidedFeature):
             prefix = '^'
         elif self.is_unique:
             prefix = '*'
-        if self.is_dummy:
-            suffix += '(d)'
+        if self.is_relation:
+            suffix += '(r)'
         return prefix + _ProvidedFeature.__repr__(self) + suffix
 
     def matches(self, unit_type, reverse=False):

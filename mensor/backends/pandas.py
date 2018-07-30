@@ -161,7 +161,7 @@ class PandasMeasureProvider(MeasureProvider):
         elif len(segment_by_cols) > 0:
             df = (
                 df
-                .assign(dummy=1)
+                .assign(relation=1)
                 .groupby(segment_by_cols)
                 .sum()
                 .reset_index()
