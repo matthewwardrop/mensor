@@ -26,7 +26,8 @@ class SQLDialect(object):
         'sum': lambda x: "SUM({})".format(x),
         'mean': lambda x: "AVG({})".format(x),
         'sos': lambda x: "SUM(POW({}, 2))".format(x),
-        'count': lambda x: "COUNT({})".format(x)
+        'count': lambda x: "COUNT({})".format(x),
+        '1': lambda x: "1",
     }
 
     TEMPLATE_BASE = textwrap.dedent("""
@@ -187,7 +188,7 @@ class DebugSQLExecutor(SQLExecutor):
 
     def query(self, sql):
         print(sql)
-        raise NotImplementedError("This SQLExecutor goes no further.")
+        raise NotImplementedError("DebugSQLExecutor prints SQL but cannot execute.")
 
 
 class SQLMeasureProvider(MeasureProvider):
@@ -197,7 +198,7 @@ class SQLMeasureProvider(MeasureProvider):
 
     @classmethod
     def _on_registered(cls, key):
-        for agg in ['sum', 'mean', 'sos', 'count']:
+        for agg in ['sum', 'mean', 'sos', 'count', '1']:
             global_stats_registry.aggregations.register(
                 name=agg,
                 backend=key,
@@ -205,7 +206,6 @@ class SQLMeasureProvider(MeasureProvider):
             )
 
     def __init__(self, *args, sql=None, executor=None, **kwargs):
-
         if not executor:
             executor = DebugSQLExecutor()
         elif isinstance(executor, str):
@@ -256,14 +256,13 @@ class SQLMeasureProvider(MeasureProvider):
 
     def _get_ir(self, unit_type, measures, segment_by, where, joins, stats_registry, stats, covariates, **opts):
         field_map = self._field_map(unit_type, measures, segment_by, joins)
-        rebase_agg = not unit_type.is_unique
         sql = self._template_environment.get_template(self.dialect.TEMPLATE_BASE).render(
             _sql=self._sql(unit_type=unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, stats=stats, covariates=covariates, **opts),
             field_map=field_map,
             provider=self,
             table_name=self._table_name(unit_type),
             dimensions=self._get_dimensions_sql(field_map, segment_by),
-            measures=self._get_measures_sql(field_map, unit_type, measures, rebase_agg, stats_registry, stats, covariates),
+            measures=self._get_measures_sql(field_map, unit_type, measures, stats_registry, stats, covariates),
             groupby=self._get_groupby_sql(field_map, segment_by),
             joins=joins,
             constraints=self._get_where_sql(field_map, where),
@@ -325,29 +324,29 @@ class SQLMeasureProvider(MeasureProvider):
                 )
         return dims
 
-    def _get_measures_sql(self, field_map, unit_type, measures, rebase_agg, stats_registry, stats, covariates):
+    def _get_measures_sql(self, field_map, unit_type, measures, stats_registry, stats, covariates):
         aggs = []
-
+        rebase_agg = not unit_type.is_unique
         if rebase_agg and stats:
             raise NotImplementedError("Computing stats and rebasing units simultaneously has not been implemented for the SQL backend.")
-        else:
-            for measure in measures:
-                if not measure.private:
-                    for fieldname, transforms in measure.get_fields(unit_type=unit_type, stats=stats, stats_registry=stats_registry, rebase_agg=rebase_agg).items():
 
-                        field = '1' if measure == 'count' else field_map['measures'][measure.via_name]
-                        if transforms.get('pre_agg'):
-                            field = transforms['pre_agg'](field, self.dialect)
-                        field = transforms['agg'](field, self.dialect)
-                        if transforms.get('post_agg'):
-                            field = transforms['post_agg'](field, self.dialect)
+        for measure in measures:
+            if not measure.private:
+                for fieldname, transforms in measure.get_fields(unit_type=unit_type, stats=stats, stats_registry=stats_registry, rebase_agg=rebase_agg).items():
 
-                        aggs.append(
-                            '{col_op} AS {f}'.format(
-                                col_op=field,
-                                f=self._col(fieldname),
-                            )
+                    field = '1' if measure == 'count' else field_map['measures'][measure.via_name]
+                    if transforms.get('pre_agg'):
+                        field = transforms['pre_agg'](field, self.dialect)
+                    field = transforms['agg'](field, self.dialect)
+                    if transforms.get('post_agg'):
+                        field = transforms['post_agg'](field, self.dialect)
+
+                    aggs.append(
+                        '{col_op} AS {f}'.format(
+                            col_op=field,
+                            f=self._col(fieldname),
                         )
+                    )
 
         return aggs
 

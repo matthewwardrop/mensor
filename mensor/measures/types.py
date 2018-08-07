@@ -380,7 +380,9 @@ class _FeatureAttrsMixin(object):
             if self.ALLOW_ALL_ATTRIBUTES or attr in self.EXTRA_ATTRIBUTES:
                 setattr(self, attr, value)
             else:
-                raise KeyError("No such attribute {}.".format(attr))
+                raise AttributeError(
+                    "Cannot initialize {}<{}> with attribute '{}'.".format(self.__class__.__name__, self.name, attr)
+                )
 
     def __getattr__(self, name):
         if name.startswith('_'):
@@ -446,10 +448,7 @@ class _FeatureAttrsMixin(object):
     @transforms.setter
     def transforms(self, transforms):
         # TODO: Check structure of transforms dict
-        if not transforms:
-            self._transforms = {}
-        else:
-            self._transforms = transforms
+        self._transforms = {} if not transforms else transforms
 
     @property
     def as_external(self):
@@ -692,8 +691,8 @@ class _ResolvedFeature(_FeatureAttrsMixin):
 
 class _Dimension(_ProvidedFeature):
 
-    def __init__(self, name, expr=None, default=None, desc=None, shared=False, partition=False, requires_constraint=False, provider=None):
-        _ProvidedFeature.__init__(self, name, expr=expr, default=default, desc=desc, shared=shared, provider=provider)
+    def __init__(self, name, expr=None, default=None, desc=None, shared=False, partition=False, requires_constraint=False, provider=None, **attrs):
+        _ProvidedFeature.__init__(self, name, expr=expr, default=default, desc=desc, shared=shared, provider=provider, **attrs)
         if not shared and partition:
             raise ValueError("Partitions must be shared.")
         self.partition = partition
@@ -777,12 +776,15 @@ class _StatisticalUnitIdentifier(_ProvidedFeature):
 class _Measure(_ProvidedFeature):
 
     def __init__(self, name, expr=None, default=None, desc=None,
-                 distribution='normal', shared=False, provider=None):
-        _ProvidedFeature.__init__(self, name, expr=expr, default=default, desc=desc, shared=shared, provider=provider)
+                 distribution='normal', shared=False, provider=None, **attrs):
+        _ProvidedFeature.__init__(
+            self, name, expr=expr, default=default, desc=desc, shared=shared, provider=provider,
+            **attrs
+        )
         self.distribution = distribution
 
     def transforms_for_unit_type(self, unit_type, stats_registry=None):
-        transforms = {
+        transforms = {  # defaults
             'pre_agg': None,
             'agg': 'sum',
             'post_agg': None,
@@ -790,7 +792,9 @@ class _Measure(_ProvidedFeature):
             'rebase_agg': 'sum',
             'post_rebase_agg': None
         }
+
         if isinstance(self.transforms, dict):
+            transforms.update(self.transforms.get('_default', {}))
             transforms.update(self.transforms.get(unit_type, {}))
 
         backend_aggs = stats_registry.aggregations.for_provider(self.provider)
@@ -828,14 +832,15 @@ class _Measure(_ProvidedFeature):
         """
         assert stats_registry is not None
         assert not (rebase_agg and stats)
+
         if for_pandas:
             from mensor.backends.pandas import PandasMeasureProvider
             provider = PandasMeasureProvider
         else:
             provider = self.provider
 
+        transforms = self.transforms_for_unit_type(unit_type, stats_registry=stats_registry)
         if stats:
-            transforms = self.transforms_for_unit_type(unit_type, stats_registry=stats_registry)
             return OrderedDict([
                 (
                     (
@@ -850,18 +855,17 @@ class _Measure(_ProvidedFeature):
                 )
                 for field_name, agg_method in stats_registry.distribution_for_provider(self.distribution, provider).items()
             ])
-        else:
-            transforms = self.transforms_for_unit_type(unit_type, stats_registry=stats_registry)
-            return OrderedDict([
-                (
-                    '{fieldname}|raw'.format(fieldname=self.fieldname(role=None, unit_type=unit_type if not rebase_agg else None)),
-                    {
-                        'agg': transforms['rebase_agg'] if rebase_agg else transforms['agg'],
-                        'pre_agg': transforms['pre_rebase_agg'] if rebase_agg else transforms['pre_agg'],
-                        'post_agg': transforms['post_rebase_agg'] if rebase_agg else transforms['post_agg'],
-                    }
-                )
-            ])
+
+        return OrderedDict([
+            (
+                '{fieldname}|raw'.format(fieldname=self.fieldname(role=None, unit_type=unit_type if not rebase_agg else None)),
+                {
+                    'agg': transforms['rebase_agg'] if rebase_agg else transforms['agg'],
+                    'pre_agg': transforms['pre_rebase_agg'] if rebase_agg else transforms['pre_agg'],
+                    'post_agg': transforms['post_rebase_agg'] if rebase_agg else transforms['post_agg'],
+                }
+            )
+        ])
 
     @classmethod
     def get_all_fields(self, measures, unit_type=None, stats=True, rebase_agg=False, stats_registry=None, for_pandas=False):
