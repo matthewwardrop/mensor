@@ -196,8 +196,14 @@ class MeasureRegistry(MeasureEvaluator):
                         mask = None
                         if kind in ('foreign_key', 'reverse_foreign_key') and avail_unit_type == feature.name:
                             mask = unit_type.name
+                        feature_attrs = feature.attrs
+                        feature_attrs.update({
+                            'unit_type': unit_type,
+                            'mask': mask,
+                            'kind': kind,
+                        })
                         features.append(
-                            _ResolvedFeature(feature.name, providers=[d.provider for d in instances], unit_type=unit_type, mask=mask, kind=kind)
+                            _ResolvedFeature(providers=[d.provider for d in instances], **feature_attrs)
                         )
         return features
 
