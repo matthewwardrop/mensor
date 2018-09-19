@@ -62,13 +62,13 @@ class Metric(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
 
     def implementation_for_strategy(self, strategy):
         for implementation in self.implementations:
-            if implementation._is_compatible_with_strategy(strategy):
+            if implementation.is_compatible_with_strategy(strategy):
                 return implementation
         raise RuntimeError("No valid implementation for strategy.")
 
-    def _is_compatible_with(self, strategy):
+    def is_compatible_with(self, strategy):
         for implementation in self.implementations:
-            if implementation._is_compatible_with_strategy(strategy):
+            if implementation.is_compatible_with_strategy(strategy):
                 return True
         return False
 
@@ -194,8 +194,8 @@ class MetricImplementation(metaclass=SubclassRegisteringABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def _is_compatible_with_strategy(self, strategy, **opts):
+    def is_compatible_with_strategy(self, strategy, **opts):
         raise NotImplementedError
 
-    def _is_compatible_with_metric(self, metric, **opts):
+    def is_compatible_with_metric(self, metric, **opts):
         return False

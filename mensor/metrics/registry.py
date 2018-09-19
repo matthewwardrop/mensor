@@ -4,7 +4,7 @@ import pandas as pd
 
 from mensor.constraints import Constraint
 from mensor.measures.registry import MeasureRegistry
-from mensor.measures.types import EvaluatedMeasures
+from mensor.measures.evaluation.output import EvaluatedMeasures
 
 from .types import Metric
 
@@ -126,7 +126,7 @@ class MetricRegistry(object):
         #     implementation1 = metric1.implementation_for_strategy(strategy1)
         #     implementation2 = metric2.implementation_for_strategy(strategy2)
         #
-        #     return implementation1._is_compatible_with_metric(implementation2)
+        #     return implementation1.is_compatible_with_metric(implementation2)
         #
         # def strategy_for_metrics(metrics):
         #     unit_type = None

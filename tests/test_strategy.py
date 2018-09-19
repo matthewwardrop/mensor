@@ -2,8 +2,7 @@ import os
 import unittest
 
 from mensor.constraints import Constraint
-from mensor.measures.registry import MeasureRegistry
-from mensor.measures.strategy import STRATEGY_TYPE
+from mensor.measures import EvaluationStrategy, MeasureRegistry
 from mensor.backends.pandas import PandasMeasureProvider
 
 
@@ -158,6 +157,7 @@ class EvaluationStrategyTests(unittest.TestCase):
             segment_by=['name', 'person:seller'], where={'*/ds': '2018-01-01'}
         )
 
+        self.assertEqual(es.strategy_type, es.Type.REGULAR)
         self.assertIn('transaction/value', es.measures)
         self.assertFalse(es.measures['transaction/value'].private)
         self.assertTrue(es.measures['transaction/value'].external)
@@ -170,7 +170,7 @@ class EvaluationStrategyTests(unittest.TestCase):
         rjoin = es.joins[0]
         self.assertEqual(rjoin.join_prefix, 'transaction')
         self.assertEqual(rjoin.unit_type, 'person:seller')
-        self.assertEqual(rjoin.strategy_type, STRATEGY_TYPE.UNIT_REBASE)
+        self.assertEqual(rjoin.strategy_type, es.Type.UNIT_REBASE)
         self.assertIn('person:seller', rjoin.segment_by)
         self.assertIn('ds', rjoin.segment_by)
         self.assertEqual({'person:seller', 'ds'}, set(rjoin.join_on_left))

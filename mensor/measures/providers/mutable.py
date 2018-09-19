@@ -5,73 +5,26 @@ import yaml
 
 from mensor.constraints import CONSTRAINTS, And, Constraint
 from mensor.utils import SequenceMap
-from mensor.utils.registry import SubclassRegisteringABCMeta
-
-from .stats import global_stats_registry
-from .types import (Join, EvaluatedMeasures, MeasureEvaluator,
-                    _Dimension, _Measure,
-                    _StatisticalUnitIdentifier)
-
-__all__ = ['MeasureProvider']
 
 
-class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
+from ..registries import global_stats_registry
+from ..common.join import Join
+from ..evaluation.output import EvaluatedMeasures
+from ..common.features import _Dimension, _Measure, _StatisticalUnitIdentifier
+from .base import MeasureProvider
+
+__all__ = ['MutableMeasureProvider']
+
+
+class MutableMeasureProvider(MeasureProvider):
     """
-    This is the base class that provides the API contract for all data sources
-    in the `mensor` universe. Every `MeasureProvider` instance is a proxy to
-    a different data source, allowing identifiers, measures and dimensions to
-    be evaluated in different contexts; and the class exists simply to provide
-    metadata about the data stored therein.
+    A subclass of `MeasureProvider` designed for run-time modification by the
+    user (such as the addition or removal of provided features). Most
+    `MeasureProvider` subclasses are likely to be children of this class.
 
-    Terminology:
-        There are three classes of metadata: identifiers, dimensions and
-        measures.
-
-        Identifiers - Specifications of statistical unit types; i.e. the
-            indivisible unit of an analysis. For example: "user", or "session",
-            etc.
-        Dimensions - Features associated with a statistical unit that are not
-            aggregatable, such as "country" of a "user" or "platform" of a
-            "client".
-        Measures - Features associated with a statistical unit that are
-            aggregatable (extensive), such as age, length, etc.
-
-        While not relevant in the context of MeasureProviders, "metrics" are
-        arbitrary functions of measures.
-
-        Note that all measures and identifiers can be used as dimensions, but
-        not vice versa.
-
-    Defining Metadata:
-
-        Setting and extracting metadata is done via a series of methods, which
-        are similar for each type of metadata.
-
-        Identifiers:
-        - .identifiers
-        - .provides_identifier
-        - .unit_types
-        - .identifier_for_unit
-        - .foreign_keys_for_unit
-
-        Dimensions:
-        - .dimensions
-        - .provides_dimension
-        - .dimensions_for_unit
-        - .provides_partition
-        - .partitions_or_unit
-
-        Measures:
-        - .measures
-        - .provides_measure
-        - .measures_for_unit
-
-    `MeasureProvider`s are registered into pools of `MeasureProvider`s called
-    `MeasureRegistry`s. Once registered, the registry can evaluate measures
-    transparently across all `MeasureProvider`s, handling the joins as necessary.
+    This class provides an implementation of feature specification, as well as
+    a generic evaluation implementation that eventually returns a pandas dataframe.
     """
-
-    REGISTRY_KEYS = None
 
     @classmethod
     def _on_registered(cls, key):
@@ -82,19 +35,8 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
         pass
 
     @classmethod
-    def from_yaml(cls, yml):
-        if '\n' not in yml:
-            with open(os.path.expanduser(yml)) as f:
-                return cls.from_dict(yaml.load(f))
-        else:
-            return cls.from_dict(yaml.loads(yml))
-
-    @classmethod
-    def from_dict(cls, d):
-        assert 'kind' in d
-        assert d.get('role') in (None, 'provider')
-        klass = cls.for_kind(d['kind'])
-        instance = klass(
+    def _from_dict(cls, d):
+        instance = cls(
             name=d.get('name'),
             identifiers=d.get('identifiers'),
             measures=d.get('measures'),
@@ -106,8 +48,7 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
 
     def __init__(self, name=None, *, identifiers=None, measures=None, dimensions=None,
                  provisions=None):
-        # TODO: Support adding metadata like measure provider maintainer
-        self.name = name
+        MeasureProvider.__init__(self, name)
 
         self.identifiers = identifiers
         self.dimensions = dimensions
@@ -295,7 +236,7 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
         }
         return self
 
-    # Measure evaluation
+    # Evaluation
     def _prepare_evaluation_args(f):
         def wrapped(self, unit_type, measures=None, segment_by=None, where=None, joins=None, stats_registry=None, stats=True, covariates=False, **opts):
             unit_type = self.identifier_for_unit(unit_type)
@@ -374,7 +315,7 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
             where=where_pre,
             joins=joins_pre,
             stats_registry=stats_registry,
-            stats=stats and len(joins_post) == 0,
+            stats=stats and not joins_post,
             covariates=covariates,
             **opts
         )
@@ -410,7 +351,7 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
 
             result = PandasMeasureProvider._finalise_dataframe(
                 df=result, unit_type=unit_type, measures=measures_post, segment_by=segment_by_post,
-                where=where_post, stats=stats, stats_registry=stats_registry,
+                where=where_post, stats=stats, stats_registry=stats_registry, covariates=covariates,
                 rebase_agg=False, reagg=False
             )
 
@@ -542,16 +483,6 @@ class MeasureProvider(MeasureEvaluator, metaclass=SubclassRegisteringABCMeta):
     def _get_ir(self, unit_type, measures=None, segment_by=None, where=None,
                 joins=None, stats_registry=None, stats=True, covariates=False, **opts):
         raise NotImplementedError
-
-    # Compatibility
-    def _is_compatible_with(self, provider):
-        '''
-        If this method returns True, this MeasureProvider can take responsibility
-        for evaluation and/or interpreting the required fields from the provided
-        provider; otherwise, any required joins will be performed in memory in
-        pandas.
-        '''
-        return False
 
     # Constraint interpretation
     @property

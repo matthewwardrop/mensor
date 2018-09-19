@@ -5,8 +5,8 @@ import textwrap
 import jinja2
 
 from mensor.constraints import CONSTRAINTS
-from mensor.measures.provider import MeasureProvider
-from mensor.measures.stats import global_stats_registry
+from mensor.measures import MutableMeasureProvider
+from mensor.measures.registries import global_stats_registry
 from mensor.metrics.types import MetricImplementation
 from mensor.utils.registry import SubclassRegisteringABCMeta
 
@@ -190,7 +190,7 @@ class DebugSQLExecutor(SQLExecutor):
         raise NotImplementedError("This SQLExecutor goes no further.")
 
 
-class SQLMeasureProvider(MeasureProvider):
+class SQLMeasureProvider(MutableMeasureProvider):
 
     REGISTRY_KEYS = ['sql']
     COLUMN_EXPR_PREAPPLIED = False
@@ -213,7 +213,7 @@ class SQLMeasureProvider(MeasureProvider):
         elif issubclass(executor, SQLExecutor):
             executor = executor()
 
-        MeasureProvider.__init__(self, *args, **kwargs)
+        MutableMeasureProvider.__init__(self, *args, **kwargs)
         self._base_sql = textwrap.dedent(sql).strip() if sql else None
         self.executor = executor
         self.dialect = DIALECTS[executor.dialect]
@@ -227,7 +227,7 @@ class SQLMeasureProvider(MeasureProvider):
         })
 
     def _sql(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
-        assert all(self._is_compatible_with(es.provider) and es.joins_all_compatible for es in self.provisions.values())
+        assert all(self.is_compatible_with(es.provider) and es.joins_all_compatible for es in self.provisions.values())
         return self._template_environment.get_template(self._base_sql).render(
             **(opts['context'] or {}),
             **{
@@ -255,7 +255,7 @@ class SQLMeasureProvider(MeasureProvider):
         return self.get_ir(*args, **kwargs)
 
     def _get_ir(self, unit_type, measures, segment_by, where, joins, stats_registry, stats, covariates, **opts):
-        field_map = self._field_map(unit_type, measures, segment_by, joins)
+        field_map = self._field_map(unit_type, measures, segment_by, where, joins)
         rebase_agg = not unit_type.is_unique
         sql = self._template_environment.get_template(self.dialect.TEMPLATE_BASE).render(
             _sql=self._sql(unit_type=unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, stats=stats, covariates=covariates, **opts),
@@ -266,7 +266,7 @@ class SQLMeasureProvider(MeasureProvider):
             measures=self._get_measures_sql(field_map, unit_type, measures, rebase_agg, stats_registry, stats, covariates),
             groupby=self._get_groupby_sql(field_map, segment_by),
             joins=joins,
-            constraints=self._get_where_sql(field_map, where),
+            constraints=self._get_where_sql(field_map, where)
         )
         return sql
 
@@ -280,7 +280,7 @@ class SQLMeasureProvider(MeasureProvider):
     def _val(self, value):
         return self.dialect.value_encode(value)
 
-    def _field_map(self, unit_type, measures, dimensions, joins):
+    def _field_map(self, unit_type, measures, dimensions, where, joins):
         field_map = {'measures': {}, 'dimensions': {}}
 
         self_table_name = self._table_name(unit_type)
@@ -362,7 +362,7 @@ class SQLMeasureProvider(MeasureProvider):
     def _constraint_maps(self):
         return self.dialect.constraint_maps()
 
-    def _is_compatible_with(self, provider):
+    def is_compatible_with(self, provider):
         return isinstance(provider, SQLMeasureProvider)
 
 
@@ -394,7 +394,7 @@ class SQLMetricImplementation(MetricImplementation):
     def sql(self):
         return self._sql
 
-    def _is_compatible_with_strategy(self, strategy):
+    def is_compatible_with_strategy(self, strategy):
         return isinstance(strategy.provider, SQLMeasureProvider) and strategy.joins_all_compatible
 
     def evaluate(self, strategy, marginalise=None, compatible_metrics=None, **opts):
@@ -444,7 +444,7 @@ class SimpleSQLMetricImplementation(SQLMetricImplementation):
 
         return SQLMetricImplementation.get_ir(self, strategy, marginalise=marginalise, metrics=metrics, **opts)
 
-    def _is_compatible_with_metric(self, metric):
+    def is_compatible_with_metric(self, metric):
         if isinstance(metric, self.__class__):
             return True
         return False

@@ -4,12 +4,12 @@ import logging
 import pandas as pd
 
 from mensor.constraints import CONSTRAINTS
-from mensor.measures.provider import MeasureProvider
-from mensor.measures.stats import global_stats_registry
-from mensor.measures.types import _Measure
+from mensor.measures import MutableMeasureProvider
+from mensor.measures.registries import global_stats_registry
+from mensor.measures.common.features import _Measure
 
 
-class PandasMeasureProvider(MeasureProvider):
+class PandasMeasureProvider(MutableMeasureProvider):
     # The base MeasureProvider.evaluate method requires the ability to interact
     # with pandas dataframes, and so some of the functionality of this class is
     # exposed as classmethods for use externally.
@@ -26,7 +26,7 @@ class PandasMeasureProvider(MeasureProvider):
         register_pandas_agg('count', agg=(sum_agg, lambda x: x.notnull().astype(int)))
 
     def __init__(self, name, data=None, data_transform=None, **kwargs):
-        MeasureProvider.__init__(self, name, **kwargs)
+        MutableMeasureProvider.__init__(self, name, **kwargs)
         if isinstance(data, str):
             data = pd.read_csv(data)
         self._data = data
@@ -72,7 +72,7 @@ class PandasMeasureProvider(MeasureProvider):
 
     @classmethod
     def _finalise_dataframe(cls, df, unit_type, measures, segment_by, where, stats_registry=None,
-                            stats=False, rebase_agg=True, reagg=False):
+                            stats=False, covariates=False, rebase_agg=True, reagg=False):
         """
         This method finalises a `pandas.DataFrame` instance by applying the
         following steps:

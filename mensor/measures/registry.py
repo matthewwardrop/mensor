@@ -1,40 +1,37 @@
 import os
-from collections import Counter
+from collections import Counter, namedtuple
 
 from mensor.utils import nested_dict_copy, SequenceMap
 
-from .provider import MeasureProvider
-from .stats import StatsRegistry, global_stats_registry
-from .strategy import EvaluationStrategy
-from .types import (MeasureEvaluator, Provision, _ProvidedFeature,
-                    _ResolvedFeature)
+from .providers.base import MeasureProvider
+from .registries import StatsRegistry, global_stats_registry
+from .evaluation.strategy import EvaluationStrategy
+from .common.features import _ProvidedFeature, _ResolvedFeature
 
 __all__ = ['MeasureRegistry']
 
+Provision = namedtuple('Provision', ['provider', 'join_prefix', 'measures', 'dimensions'])
 
-class MeasureRegistry(MeasureEvaluator):
+
+class MeasureRegistry(MeasureProvider):
     """
-    A `MeasureRegistry` instance is a wrapper around a pool of `MeasureProvider`
-    instances that generates a graph of relationships between all of the
-    provided identifiers, measures and dimensions. Relationships between these
-    features can then be extracted and used in various tasks, chief among which
-    being the evaluation of measures for a statistical unit type segmented by
-    various dimensions. The logic for the evaluation is handled by the
-    `.stategy.EvaluationStrategy` class. The only purpose of this class is to
-    construct and manage the graph.
+    A `MeasureProvider` subclass that acts as a host for other `MeasureProvider`
+    instances, allowing evaluations of measures that span multiple providers.
 
-    To add `MeasureProvider`s to instances of this class, simply call the
-    `.registry()` method of this class and pass to it the relevant
-    `MeasureProvider` instance.
+    Instances of this class generate a graph of relationships between all of the
+    identifiers, measures and dimensions provided by all hosted providers.
+    Relationships between these features can then be extracted and used in
+    various tasks, chief among which being the evaluation of measures for a
+    statistical unit type segmented by various dimensions. The logic for the
+    evaluation is handled by the `mensor.measures.evaluation.EvaluationStrategy`
+    class.
 
-    Relationships:
-        The graph formed by registering `MeasureProvider`s has the following
-        relationships.
-
-        unit_type -> measure
-        unit_type -> dimension
-        unit_type -> foreign_key
-        unit_type <- foreign_key [-> reverse_foreign_key]
+    The graph formed by registering `MeasureProvider` instances has the following
+    relationships:
+        - unit_type -> foreign_key
+        - unit_type <- foreign_key [-> reverse_foreign_key]
+        - unit_type -> dimension
+        - unit_type -> measure
     """
 
     class GraphCache(object):
@@ -62,10 +59,10 @@ class MeasureRegistry(MeasureEvaluator):
 
             # Require that each provider have at least one primary key
             # and a measure "count".
-            if len(list(identifier for identifier in provider.identifiers if identifier.is_unique)) == 0:
-                raise RuntimeError("MeasureProvider '{}' does not have at least one unique identifier.".format(provider))
-            if 'count' not in provider.measures:
-                raise RuntimeError("MeasureProvider '{}' does not provide a 'count' measure.".format(provider))
+            # if len(list(identifier for identifier in provider.identifiers if identifier.is_unique)) == 0:
+            #     raise RuntimeError("MeasureProvider '{}' does not have at least one unique identifier.".format(provider))
+            # if 'count' not in provider.measures:
+            #     raise RuntimeError("MeasureProvider '{}' does not provide a 'count' measure.".format(provider))
 
             for identifier in provider.identifiers:
                 self.register_identifier(identifier)
@@ -79,18 +76,49 @@ class MeasureRegistry(MeasureEvaluator):
                 for measure in provider.measures_for_unit(identifier):
                     self.register_measure(identifier, measure)
 
-        def register_identifier(self, unit_type):
-            self._append(self.identifiers, [unit_type], unit_type)
+        def _handled_resolved_features(f):
+            def wrapped(self, unit_type, *args):
+                assert len(args) in (0, 1)
 
+                if args:
+                    if isinstance(unit_type, _ResolvedFeature):
+                        unit_type = unit_type.from_provider(list(unit_type._providers.values())[0])
+
+                    if isinstance(args[0], _ResolvedFeature):
+                        for provider in args[0]._providers:
+                            f(self, unit_type, args[0].from_provider(provider))
+                    else:
+                        f(self, unit_type, args[0])
+
+                else:
+                    if isinstance(unit_type, _ResolvedFeature):
+                        for provider in unit_type._providers:
+                            f(self, unit_type.from_provider(provider))
+                    else:
+                        f(self, unit_type)
+            return wrapped
+
+        @_handled_resolved_features
+        def register_identifier(self, unit_type):
+            if isinstance(unit_type, _ResolvedFeature):
+                for provider in unit_type._providers:
+                    provided = unit_type.from_provider(provider)
+                    self._append(self.identifiers, [provided], provided)
+            else:
+                self._append(self.identifiers, [unit_type], unit_type)
+
+        @_handled_resolved_features
         def register_foreign_key(self, unit_type, foreign_key):
             if unit_type.is_unique:
                 self._append(self.foreign_keys, [unit_type, foreign_key], foreign_key)
             elif foreign_key.is_unique:
                 self._append(self.reverse_foreign_keys, [unit_type, foreign_key], foreign_key)
 
+        @_handled_resolved_features
         def register_dimension(self, unit_type, dimension):
             self._append(self.dimensions, [unit_type, dimension], dimension)
 
+        @_handled_resolved_features
         def register_measure(self, unit_type, measure):
             self._append(self.measures, [unit_type, measure], measure)
 
@@ -117,7 +145,8 @@ class MeasureRegistry(MeasureEvaluator):
 
     # Initialisation methods
 
-    def __init__(self):
+    def __init__(self, name=None):
+        MeasureProvider.__init__(self, name)
         self._providers = {}
         self._stats_registry = StatsRegistry(fallback=global_stats_registry)
         self._cache = MeasureRegistry.GraphCache()
@@ -168,13 +197,12 @@ class MeasureRegistry(MeasureEvaluator):
         return self._stats_registry.aggregations.register(agg=agg, name=name, backend=backend)
 
     @property
-    def unit_types(self):
+    def identifiers(self):
         return SequenceMap(
             self.identifier_for_unit(ut) for ut in self._cache.identifiers.keys()
         )
 
     # MeasureEvaluator methods
-
     def identifier_for_unit(self, unit_type):
         return _ResolvedFeature(
             name=unit_type if isinstance(unit_type, str) else unit_type.name,
@@ -245,7 +273,7 @@ class MeasureRegistry(MeasureEvaluator):
                 via += ('/' + via_suffix) if via else via_suffix
             attrs['unit_type'] = unit_type
 
-        return MeasureEvaluator._resolve(self, eff_unit_type, feature, role=role)._with_attrs(**attrs).as_via(via)
+        return MeasureProvider._resolve(self, eff_unit_type, feature, role=role)._with_attrs(**attrs).as_via(via)
 
     def _find_primary_key_for_unit_type(self, unit_type):
         for identifier in sorted(self._cache.identifiers, key=lambda x: len(x.name), reverse=True):
@@ -276,6 +304,8 @@ class MeasureRegistry(MeasureEvaluator):
             list<Provision>: A list of `Provision` instances which optimally
                 supply the requested measures and dimensions.
         """
+
+        # TODO: Handle relation case, where ...
 
         # [Provision(provider, measures, dimensions), ...]
         unit_type = self.identifier_for_unit(unit_type)
@@ -331,7 +361,7 @@ class MeasureRegistry(MeasureEvaluator):
         return strategy.execute(stats=stats, covariates=covariates, **opts)
 
     def get_ir(self, unit_type, measures=None, segment_by=None, where=None,
-               stats=True, covariates=False, dry_run=False, **opts):
+               stats=True, covariates=False, **opts):
         strategy = self.get_strategy(
             unit_type, measures=measures, segment_by=segment_by, where=where
         )
@@ -341,39 +371,3 @@ class MeasureRegistry(MeasureEvaluator):
         return EvaluationStrategy.from_spec(
             self, unit_type, measures=measures, segment_by=segment_by, where=where
         )
-
-    def show(self, *unit_types, kind=None):
-        unit_types = [self.identifier_for_unit(ut) for ut in unit_types] if len(unit_types) > 0 else sorted(self.unit_types)
-        if isinstance(kind, str):
-            kind = [kind]
-        if not kind:
-            kind = ['foreign_key', 'reverse_foreign_key', 'dimension', 'partition', 'measure']
-
-        for unit_type in unit_types:
-            print("{}:{}".format(
-                unit_type.name,
-                " [{}]".format(unit_type.desc) if unit_type.desc else ""
-            ))
-
-            features = {
-                'foreign_key': self.foreign_keys_for_unit(unit_type),
-                'reverse_foreign_key': self.reverse_foreign_keys_for_unit(unit_type),
-                'dimension': self.dimensions_for_unit(unit_type, include_partitions=False),
-                'partition': self.partitions_for_unit(unit_type),
-                'measure': self.measures_for_unit(unit_type)
-            }
-
-            for k in kind:
-                feature_name = "{}s".format(k.replace('_', ' ').title())
-                feature_set = features[k]
-                if not len(feature_set) or len(feature_set) == 1 and feature_set.first == unit_type:
-                    continue
-                print("    {}:".format(feature_name))
-                for feature in sorted(feature_set):
-                    if feature != unit_type:
-                        print(
-                            "        - {}{}".format(
-                                feature.mask,
-                                " [{}]".format(feature.desc) if feature.desc else ""
-                            )
-                        )
