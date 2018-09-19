@@ -87,8 +87,8 @@ class MutableMeasureProvider(MeasureProvider):
     def identifiers(self, identifiers):
         self._identifiers = self._get_dimensions_from_specs(_StatisticalUnitIdentifier, identifiers)
 
-    def add_identifier(self, unit_type=None, expr=None, desc=None, role='foreign', relation=False):
-        identifier = _StatisticalUnitIdentifier(unit_type, expr=expr, desc=desc, role=role, relation=relation, provider=self)
+    def add_identifier(self, unit_type=None, expr=None, desc=None, role='foreign'):
+        identifier = _StatisticalUnitIdentifier(unit_type, expr=expr, desc=desc, role=role, provider=self)
         self._identifiers.append(identifier)
         return self
 

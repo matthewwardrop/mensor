@@ -356,13 +356,10 @@ class _Dimension(_ProvidedFeature):
 
 class _StatisticalUnitIdentifier(_ProvidedFeature):
 
-    def __init__(self, name, expr=None, desc=None, role='foreign', relation=False, provider=None):
+    def __init__(self, name, expr=None, desc=None, role='foreign', provider=None):
         _ProvidedFeature.__init__(self, name, expr=expr, desc=desc, shared=True, provider=provider)
-        assert role in ('primary', 'unique', 'foreign')
-        if relation:
-            assert role == 'primary', "Dummy identifiers currently only makes sense when it is to be treated as primary."
+        assert role in ('primary', 'unique', 'foreign', 'relation')
         self.role = role
-        self._relation = relation
 
     @property
     def unit_type(self):
@@ -374,11 +371,11 @@ class _StatisticalUnitIdentifier(_ProvidedFeature):
 
     @property
     def is_primary(self):
-        return self.role == 'primary'
+        return self.role in ('primary', 'relation')
 
     @property
     def is_unique(self):
-        return self.role in ('primary', 'unique')
+        return self.role in ('primary', 'unique', 'relation')
 
     @property
     def is_relation(self):
@@ -395,7 +392,7 @@ class _StatisticalUnitIdentifier(_ProvidedFeature):
 
         Note that data is still accessible via reverse foreign keys.
         """
-        return self._relation
+        return self.role == 'relation'
 
     def __repr__(self):
         prefix = suffix = ''
