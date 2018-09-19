@@ -87,7 +87,7 @@ class MutableMeasureProvider(MeasureProvider):
     def identifiers(self, identifiers):
         self._identifiers = self._get_dimensions_from_specs(_StatisticalUnitIdentifier, identifiers)
 
-    def provides_identifier(self, unit_type=None, expr=None, desc=None, role='foreign', relation=False):
+    def add_identifier(self, unit_type=None, expr=None, desc=None, role='foreign', relation=False):
         identifier = _StatisticalUnitIdentifier(unit_type, expr=expr, desc=desc, role=role, relation=relation, provider=self)
         self._identifiers.append(identifier)
         return self
@@ -137,7 +137,7 @@ class MutableMeasureProvider(MeasureProvider):
     def dimensions(self, dimensions):
         self._dimensions = self._get_dimensions_from_specs(_Dimension, dimensions)
 
-    def provides_dimension(self, name=None, desc=None, expr=None, default=None, shared=False, requires_constraint=False):
+    def add_dimension(self, name=None, desc=None, expr=None, default=None, shared=False, requires_constraint=False):
         dimension = _Dimension(name, desc=desc, expr=expr, default=default, shared=shared, requires_constraint=requires_constraint, provider=self)
         self._dimensions.append(dimension)
         return self
@@ -167,7 +167,7 @@ class MutableMeasureProvider(MeasureProvider):
     # Note that partitions also appears as dimensions, since they are
     # functionally equivalent in most cases.
     # (partitions behave differently in joins TODO: document this difference)
-    def provides_partition(self, name=None, desc=None, expr=None, requires_constraint=False):
+    def add_partition(self, name=None, desc=None, expr=None, requires_constraint=False):
         dimension = _Dimension(name, desc=desc, expr=expr, shared=True, partition=True, requires_constraint=requires_constraint, provider=self)
         self._dimensions.append(dimension)
         return self
@@ -187,7 +187,7 @@ class MutableMeasureProvider(MeasureProvider):
     def measures(self, measures):
         self._measures = self._get_dimensions_from_specs(_Measure, measures)
 
-    def provides_measure(self, name=None, expr=None, default=None, desc=None, shared=False, distribution='normal'):
+    def add_measure(self, name=None, expr=None, default=None, desc=None, shared=False, distribution='normal'):
         measure = _Measure(name, expr=expr, default=default, desc=desc, shared=shared, distribution=distribution, provider=self)
         self._measures.append(measure)
         return self

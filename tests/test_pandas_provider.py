@@ -17,10 +17,10 @@ class PandasMeasureProviderTests(unittest.TestCase):
                 name='people',
                 data=os.path.join(data_dir, 'people.csv')
             )
-            .provides_identifier('person', expr='id', role='primary')
-            .provides_identifier('geography', expr='id_country', role='foreign')
-            .provides_dimension('name')
-            .provides_measure('age')
+            .add_identifier('person', expr='id', role='primary')
+            .add_identifier('geography', expr='id_country', role='foreign')
+            .add_dimension('name')
+            .add_measure('age')
         )
         self.registry.register(people)
 
@@ -29,10 +29,10 @@ class PandasMeasureProviderTests(unittest.TestCase):
                 name='transactions',
                 data=os.path.join(data_dir, 'transactions.csv')
             )
-            .provides_identifier('transaction', expr='id', role='primary')
-            .provides_identifier('person:buyer', expr='id_buyer', role='foreign')
-            .provides_identifier('person:seller', expr='id_seller', role='foreign')
-            .provides_measure('value')
+            .add_identifier('transaction', expr='id', role='primary')
+            .add_identifier('person:buyer', expr='id_buyer', role='foreign')
+            .add_identifier('person:seller', expr='id_seller', role='foreign')
+            .add_measure('value')
         )
         self.registry.register(transactions)
 

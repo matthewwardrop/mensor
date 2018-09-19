@@ -141,5 +141,5 @@ class ConstraintTests(unittest.TestCase):
         for constraint in c.scoped_for_unit_type('unit').operands:
             self.assertFalse(constraint.has_generic)
 
-        mp = MutableMeasureProvider().provides_dimension('b')
+        mp = MutableMeasureProvider().add_dimension('b')
         self.assertEqual(c.generic_for_provider(mp), Constraint.from_spec({'b': 2}))

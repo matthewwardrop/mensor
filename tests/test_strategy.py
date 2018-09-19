@@ -18,10 +18,10 @@ class EvaluationStrategyTests(unittest.TestCase):
                 name='people',
                 data=os.path.join(data_dir, 'people.csv')
             )
-            .provides_identifier('person', expr='id', role='primary')
-            .provides_dimension('name')
-            .provides_measure('age')
-            .provides_partition('ds')
+            .add_identifier('person', expr='id', role='primary')
+            .add_dimension('name')
+            .add_measure('age')
+            .add_partition('ds')
         )
         self.registry.register(people)
 
@@ -30,9 +30,9 @@ class EvaluationStrategyTests(unittest.TestCase):
                 name='people2',
                 data=os.path.join(data_dir, 'people.csv')
             )
-            .provides_identifier('person', expr='id', role='unique')
-            .provides_identifier('geography', expr='id_geography', role='foreign')
-            .provides_partition('ds')
+            .add_identifier('person', expr='id', role='unique')
+            .add_identifier('geography', expr='id_geography', role='foreign')
+            .add_partition('ds')
         )
         self.registry.register(people2)
 
@@ -41,10 +41,10 @@ class EvaluationStrategyTests(unittest.TestCase):
                 name='geographies',
                 data=os.path.join(data_dir, 'geographies.csv')
             )
-            .provides_identifier('geography', expr='id_geography', role='primary')
-            .provides_dimension('name')
-            .provides_measure('population')
-            .provides_partition('ds')
+            .add_identifier('geography', expr='id_geography', role='primary')
+            .add_dimension('name')
+            .add_measure('population')
+            .add_partition('ds')
 
         )
         self.registry.register(geographies)
@@ -54,11 +54,11 @@ class EvaluationStrategyTests(unittest.TestCase):
                 name='transactions',
                 data=os.path.join(data_dir, 'transactions.csv')
             )
-            .provides_identifier('transaction', expr='id', role='primary')
-            .provides_identifier('person:buyer', expr='id_buyer', role='foreign')
-            .provides_identifier('person:seller', expr='id_seller', role='foreign')
-            .provides_measure('value')
-            .provides_partition('ds', requires_constraint=True)
+            .add_identifier('transaction', expr='id', role='primary')
+            .add_identifier('person:buyer', expr='id_buyer', role='foreign')
+            .add_identifier('person:seller', expr='id_seller', role='foreign')
+            .add_measure('value')
+            .add_partition('ds', requires_constraint=True)
         )
         self.registry.register(transactions)
 
