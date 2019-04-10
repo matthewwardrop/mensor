@@ -10,7 +10,7 @@ from mensor.utils import SequenceMap
 from ..registries import global_stats_registry
 from ..common.join import Join
 from ..evaluation.output import EvaluatedMeasures
-from ..common.features import _Dimension, _Measure, _StatisticalUnitIdentifier
+from ..common.features import _Dimension, _Measure, _StatisticalUnitIdentifier, _ProvidedFeature
 from .base import MeasureProvider
 
 __all__ = ['MutableMeasureProvider']
@@ -240,8 +240,10 @@ class MutableMeasureProvider(MeasureProvider):
     def _prepare_evaluation_args(f):
         def wrapped(self, unit_type, measures=None, segment_by=None, where=None, joins=None, stats_registry=None, stats=True, covariates=False, **opts):
             unit_type = self.identifier_for_unit(unit_type)
-            measures = {} if measures is None else self.resolve(unit_type=unit_type, features=measures, role='measure')
-            segment_by = {} if segment_by is None else self.resolve(unit_type=unit_type, features=segment_by, role='dimension')
+            if not isinstance(measures, (SequenceMap, _ProvidedFeature)):
+                measures = SequenceMap() if measures is None else self.resolve(unit_type=unit_type, features=measures, role='measure')
+            if not isinstance(segment_by, (SequenceMap, _ProvidedFeature)):
+                segment_by = SequenceMap() if segment_by is None else self.resolve(unit_type=unit_type, features=segment_by, role='dimension')
             where = Constraint.from_spec(where)
             joins = joins or []
             stats_registry = stats_registry or global_stats_registry
