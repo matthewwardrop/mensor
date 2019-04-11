@@ -32,7 +32,7 @@ class PandasMeasureProvider(MutableMeasureProvider):
         self._data = data
         self._data_transform = data_transform
 
-        self.add_measure('count', shared=True, distribution=None, default=0)
+        self.add_measure('count', shared=True, distribution='count', default=0)
 
     @property
     def data(self):

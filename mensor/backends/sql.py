@@ -218,7 +218,7 @@ class SQLMeasureProvider(MutableMeasureProvider):
         self.executor = executor
         self.dialect = DIALECTS[executor.dialect]
 
-        self.add_measure('count', shared=True, distribution=None, default=0)
+        self.add_measure('count', shared=True, distribution='count', default=0)
 
         self._template_environment = jinja2.Environment(loader=jinja2.FunctionLoader(lambda x: x), undefined=jinja2.StrictUndefined)
         self._template_environment.filters.update({
@@ -330,24 +330,25 @@ class SQLMeasureProvider(MutableMeasureProvider):
 
         if rebase_agg and stats:
             raise NotImplementedError("Computing stats and rebasing units simultaneously has not been implemented for the SQL backend.")
-        else:
-            for measure in measures:
-                if not measure.private:
-                    for fieldname, transforms in measure.get_fields(unit_type=unit_type, stats=stats, stats_registry=stats_registry, rebase_agg=rebase_agg).items():
 
-                        field = '1' if measure == 'count' else field_map['measures'][measure.via_name]
-                        if transforms.get('pre_agg'):
-                            field = transforms['pre_agg'](field, self.dialect)
-                        field = transforms['agg'](field, self.dialect)
-                        if transforms.get('post_agg'):
-                            field = transforms['post_agg'](field, self.dialect)
+        for measure in measures:
+            if measure.private:
+                continue
+            for fieldname, transforms in measure.get_fields(unit_type=unit_type, stats=stats, stats_registry=stats_registry, rebase_agg=rebase_agg).items():
 
-                        aggs.append(
-                            '{col_op} AS {f}'.format(
-                                col_op=field,
-                                f=self._col(fieldname),
-                            )
-                        )
+                field = '1' if measure == 'count' else field_map['measures'][measure.via_name]
+                if transforms.get('pre_agg'):
+                    field = transforms['pre_agg'](field, self.dialect)
+                field = transforms['agg'](field, self.dialect)
+                if transforms.get('post_agg'):
+                    field = transforms['post_agg'](field, self.dialect)
+
+                aggs.append(
+                    '{col_op} AS {f}'.format(
+                        col_op=field,
+                        f=self._col(fieldname),
+                    )
+                )
 
         return aggs
 

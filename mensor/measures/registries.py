@@ -151,8 +151,17 @@ register_distn = global_stats_registry.distributions.register
 register_distn(
     name=None,
     stats=OrderedDict([
-        ('sum', 'sum'),
-        ('count', 'count')
+        ('raw', 'raw'),
+    ]),
+    scipy_class=None,
+    scipy_params=None
+)
+
+# Count distribution
+register_distn(
+    name='count',
+    stats=OrderedDict([
+        ('count', 'count'),
     ]),
     scipy_class=None,
     scipy_params=None
