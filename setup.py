@@ -1,4 +1,6 @@
 """
+# Mensor
+
 Mensor is a graph-based computation engine for computing measures and metrics.
 It:
 
@@ -34,6 +36,7 @@ with open('mensor/_version.py') as version_file:
 
 setup(
     name='mensor',
+    versioning='post',
     description="A dynamic graph-based metric computation engine.",
     long_description=__doc__.strip(),
     long_description_content_type='text/markdown',
@@ -49,8 +52,10 @@ setup(
     },
     keywords='measures metrics aggregation experimentation statistics',
     packages=find_packages(),
-    python_requires='~=3.4',
+    python_requires='~=3.5',
     install_requires=version_info['__dependencies__'],
+    setup_requires=['pytest-runner', 'setupmeta'],
+    tests_require=['pytest'],
     classifiers=[
         'Development Status :: 3 - Alpha',
         'Environment :: Console',
@@ -59,8 +64,8 @@ setup(
         'Intended Audience :: Science/Research',
         'License :: OSI Approved :: MIT License',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.4',
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
     ]
 )
