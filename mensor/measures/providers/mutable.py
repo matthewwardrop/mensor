@@ -241,10 +241,12 @@ class MutableMeasureProvider(MeasureProvider):
     def _prepare_evaluation_args(f):
         def wrapped(self, unit_type, measures=None, segment_by=None, where=None, joins=None, stats_registry=None, stats=True, covariates=False, context=None, **opts):
             unit_type = self.identifier_for_unit(unit_type)
-            if not isinstance(measures, (SequenceMap, _ProvidedFeature)):
-                measures = SequenceMap() if measures is None else self.resolve(unit_type=unit_type, features=measures, role='measure')
-            if not isinstance(segment_by, (SequenceMap, _ProvidedFeature)):
-                segment_by = SequenceMap() if segment_by is None else self.resolve(unit_type=unit_type, features=segment_by, role='dimension')
+            if isinstance(measures, (str, _ProvidedFeature)):
+                measures = [measures]
+            measures = SequenceMap() if measures is None else self.resolve(unit_type=unit_type, features=measures, role='measure')
+            if isinstance(segment_by, (str, _ProvidedFeature)):
+                segment_by = [segment_by]
+            segment_by = SequenceMap() if segment_by is None else self.resolve(unit_type=unit_type, features=segment_by, role='dimension')
             where = Constraint.from_spec(where)
             joins = joins or []
             stats_registry = stats_registry or global_stats_registry
