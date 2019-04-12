@@ -161,7 +161,7 @@ register_distn(
 register_distn(
     name='count',
     stats=OrderedDict([
-        ('count', 'count'),
+        ('count', 'sum'),
     ]),
     scipy_class=None,
     scipy_params=None
