@@ -231,6 +231,10 @@ class SQLMeasureProvider(MutableMeasureProvider):
 
     def _sql(self, unit_type, measures, segment_by, where, joins, stats, covariates, context, **opts):
         assert all(self.is_compatible_with(es.provider) and es.joins_all_compatible for es in self.provisions.values())
+        assert self._base_sql is not None, (
+            '{} must be instantiated with sql if it is to be evaluated '
+            'or its internal representation rendered'.format(self)
+        )
         return self._template_environment.get_template(self._base_sql).render(
             **context,
             **{
