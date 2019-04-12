@@ -3,12 +3,13 @@ from collections import Counter, namedtuple
 
 from mensor.utils import nested_dict_copy, SequenceMap
 
-from .providers.base import MeasureProvider
-from .registries import StatsRegistry, global_stats_registry
-from .evaluation.strategy import EvaluationStrategy
 from .common.features import _ProvidedFeature, _ResolvedFeature
+from .evaluation.strategy import EvaluationStrategy
+from .providers.base import MeasureProvider
+from .registries import global_stats_registry, StatsRegistry
 
 __all__ = ['MeasureRegistry']
+
 
 Provision = namedtuple('Provision', ['provider', 'join_prefix', 'measures', 'dimensions'])
 

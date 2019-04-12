@@ -1,15 +1,12 @@
-import itertools
-import six
-from abc import ABCMeta, abstractmethod, abstractproperty, abstractclassmethod
 import os
 import uuid
+from abc import abstractmethod, abstractproperty
 
+import six
 import yaml
 
-from mensor.utils.registry import SubclassRegisteringABCMeta
-from mensor.constraints import Constraint, And
-from mensor.measures.registries import global_stats_registry
 from mensor.utils import OptionsMixin, SequenceMap
+from mensor.utils.registry import SubclassRegisteringABCMeta
 
 from ..common.feature_spec import FeatureSpec
 

@@ -3,6 +3,7 @@ import os
 import numpy as np
 import pandas as pd
 
+
 data_dir = os.path.dirname(__file__)
 with open(os.path.join(data_dir, 'geography_names.txt')) as f:
     geography_names = [name[:-1] for name in f.readlines()]

@@ -5,7 +5,6 @@ import scipy.stats
 
 
 # Statistics Registry base classe
-
 class Registry:
 
     def __init__(self, fallback=None):

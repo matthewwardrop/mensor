@@ -3,8 +3,8 @@ import os
 import pandas as pd
 
 from mensor.constraints import Constraint
-from mensor.measures.registry import MeasureRegistry
 from mensor.measures.evaluation.output import EvaluatedMeasures
+from mensor.measures.registry import MeasureRegistry
 
 from .types import Metric
 

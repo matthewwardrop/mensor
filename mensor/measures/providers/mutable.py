@@ -1,17 +1,14 @@
 import itertools
-import os
 
-import yaml
-
-from mensor.constraints import CONSTRAINTS, And, Constraint
+from mensor.constraints import And, Constraint, CONSTRAINTS
 from mensor.utils import SequenceMap
 
-
-from ..registries import global_stats_registry
+from .base import MeasureProvider
+from ..common.features import _Dimension, _Measure, _ProvidedFeature, _StatisticalUnitIdentifier
 from ..common.join import Join
 from ..evaluation.output import EvaluatedMeasures
-from ..common.features import _Dimension, _Measure, _StatisticalUnitIdentifier, _ProvidedFeature
-from .base import MeasureProvider
+from ..registries import global_stats_registry
+
 
 __all__ = ['MutableMeasureProvider']
 

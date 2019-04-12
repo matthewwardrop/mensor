@@ -1,9 +1,9 @@
 import os
 import unittest
 
-from mensor.constraints import Constraint
-from mensor.measures import EvaluationStrategy, MeasureRegistry
 from mensor.backends.pandas import PandasMeasureProvider
+from mensor.constraints import Constraint
+from mensor.measures import MeasureRegistry
 
 
 class EvaluationStrategyTests(unittest.TestCase):

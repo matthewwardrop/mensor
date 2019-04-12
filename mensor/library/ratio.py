@@ -1,5 +1,5 @@
-from mensor.metrics import Metric
 from mensor.backends.sql import SimpleSQLMetricImplementation
+from mensor.metrics import Metric
 
 
 def get_sum_and_variance(strategy, measure):

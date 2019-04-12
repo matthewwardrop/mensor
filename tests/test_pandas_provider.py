@@ -1,8 +1,8 @@
 import os
 import unittest
 
-from mensor.measures.registry import MeasureRegistry
 from mensor.backends.pandas import PandasMeasureProvider
+from mensor.measures.registry import MeasureRegistry
 
 
 class PandasMeasureProviderTests(unittest.TestCase):

@@ -1,9 +1,9 @@
 """Classes used to represent features internally."""
-
 import copy
 import re
-import six
 from collections import OrderedDict
+
+import six
 
 
 class _FeatureAttrsMixin:
