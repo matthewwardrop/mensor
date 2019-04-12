@@ -1,3 +1,5 @@
+"""Implementation of MeasureRegistry, the meta-MeasureProvider."""
+
 import os
 from collections import Counter, namedtuple
 
@@ -27,15 +29,19 @@ class MeasureRegistry(MeasureProvider):
     evaluation is handled by the `mensor.measures.evaluation.EvaluationStrategy`
     class.
 
-    The graph formed by registering `MeasureProvider` instances has the following
-    relationships:
+    The graph formed by registering `MeasureProvider` instances has the
+    following relationships:
         - unit_type -> foreign_key
         - unit_type <- foreign_key [-> reverse_foreign_key]
         - unit_type -> dimension
         - unit_type -> measure
     """
 
-    class GraphCache(object):
+    class GraphCache:
+        """
+        The internal representation of the relationships between features
+        across multiple MeasureProviders.
+        """
 
         def __init__(self, providers=None, identifiers=None, foreign_keys=None,
                      reverse_foreign_keys=None, dimensions=None, measures=None):
@@ -50,16 +56,23 @@ class MeasureRegistry(MeasureProvider):
             return MeasureRegistry.GraphCache(
                 **{
                     key: nested_dict_copy(getattr(self, key))
-                    for key in ['providers', 'identifiers', 'foreign_keys', 'reverse_foreign_keys', 'dimensions', 'measures']
+                    for key in [
+                        'providers', 'identifiers', 'foreign_keys',
+                        'reverse_foreign_keys', 'dimensions', 'measures'
+                    ]
                 }
             )
 
         def register(self, provider):
-            # TODO: Enforce that measures and dimensions share same namespace, and never conflict with stat types
-            # TODO: Ensure no contradictory key types (e.g. Two identifiers primary on one table and not both primary on a secondary table)
+            # TODO: Enforce that measures and dimensions share same namespace,
+            # and never conflict with stat types
+            # TODO: Ensure no contradictory key types (e.g. Two identifiers
+            # primary on one table and not both primary on a secondary table)
 
-            # Require that each provider have at least one primary key
-            # and a measure "count".
+            # Require that each provider have at least one primary key and a
+            # measure "count".
+            # TODO: Uncomment these checks and retain compatibility with nested
+            # MeasureRegistry instances.
             # if len(list(identifier for identifier in provider.identifiers if identifier.is_unique)) == 0:
             #     raise RuntimeError("MeasureProvider '{}' does not have at least one unique identifier.".format(provider))
             # if 'count' not in provider.measures:
@@ -123,15 +136,17 @@ class MeasureRegistry(MeasureProvider):
         def register_measure(self, unit_type, measure):
             self._append(self.measures, [unit_type, measure], measure)
 
-        def _extract(self, store, keys):
-            for i, key in enumerate(keys):
+        @staticmethod
+        def _extract(store, keys):
+            for key in keys:
                 if key not in store:
                     return []
                 store = store[key]
             assert isinstance(store, list)
             return store
 
-        def _append(self, store, keys, value):
+        @staticmethod
+        def _append(store, keys, value):
             for i, key in enumerate(keys):
                 if key not in store:
                     if i == len(keys) - 1:
@@ -140,22 +155,26 @@ class MeasureRegistry(MeasureProvider):
                         store[key] = {}
                 store = store[key]
             assert isinstance(store, list)
-            if len(store) > 0 and not (value.shared and all([d.shared for d in store])):
-                raise RuntimeError("Attempted to add duplicate non-shared feature '{}'.".format(value))
+            if store and not (value.shared and all([d.shared for d in store])):
+                raise RuntimeError(
+                    "Attempted to add duplicate non-shared feature '{}'.".format(value)
+                )
             store.append(value)
 
     # Initialisation methods
 
     def __init__(self, name=None):
         MeasureProvider.__init__(self, name)
-        self._providers = {}
+        self._providers = SequenceMap()
         self._stats_registry = StatsRegistry(fallback=global_stats_registry)
         self._cache = MeasureRegistry.GraphCache()
 
-    def _cache_refresh(self):
-        self._cache = MeasureRegistry.GraphCache()
-        for provider in self._providers.values():
-            self._cache.register(provider)
+    # MeasureProvider registration
+
+    @property
+    def providers(self):
+        """A SequenceMap of all of the providers hosted by this registry."""
+        return self._providers
 
     def register(self, provider):
         """
@@ -172,6 +191,8 @@ class MeasureRegistry(MeasureProvider):
         # Committing cache
         self._cache = cache
 
+        return self
+
     def register_from_yaml(self, path_or_yaml):
         if '\n' in path_or_yaml or not os.path.isdir(os.path.expanduser(path_or_yaml)):
             return self.register(MeasureProvider.from_yaml(path_or_yaml))
@@ -185,10 +206,24 @@ class MeasureRegistry(MeasureProvider):
                         except AssertionError:
                             pass
 
-    def unregister(self, provider_name):
-        provider = self._providers.pop(provider_name)
+    def unregister(self, provider):
+        """
+        Remove a nominated provider from this registry.
+
+        Args:
+            provider (MeasureProvider, str): The provider to be removed.
+
+        Returns:
+            MeasureProvider: The removed provider.
+        """
+        provider = self._providers.pop(provider)
         self._cache_refresh()
         return provider
+
+    def _cache_refresh(self):
+        self._cache = MeasureRegistry.GraphCache()
+        for provider in self._providers.values():
+            self._cache.register(provider)
 
     # Transform registration
     def register_transform(self, transform, name=None, backend=None):
@@ -290,7 +325,7 @@ class MeasureRegistry(MeasureProvider):
         dimensions should be extracted. This is primarily useful for the
         generation of an `EvaluationStrategy`.
 
-        Parameters:
+        Args:
             unit_type (str, _StatisticalUnitIdentifier): The statistical unit
                 type for which indicated measures and dimensions should be
                 extracted.
@@ -355,20 +390,21 @@ class MeasureRegistry(MeasureProvider):
         return provisions
 
     def evaluate(self, unit_type, measures=None, segment_by=None, where=None,
-                 stats=True, covariates=False, **opts):
+                 stats=True, covariates=False, context=None, **opts):
         strategy = self.get_strategy(
-            unit_type, measures=measures, segment_by=segment_by, where=where
+            unit_type, measures=measures, segment_by=segment_by, where=where, context=context
         )
-        return strategy.execute(stats=stats, covariates=covariates, **opts)
+        return strategy.execute(stats=stats, covariates=covariates, context=context, **opts)
 
     def get_ir(self, unit_type, measures=None, segment_by=None, where=None,
-               stats=True, covariates=False, **opts):
+               stats=True, covariates=False, context=None, **opts):
         strategy = self.get_strategy(
-            unit_type, measures=measures, segment_by=segment_by, where=where
+            unit_type, measures=measures, segment_by=segment_by, where=where, context=context
         )
-        return strategy.execute(stats=stats, covariates=covariates, ir_only=True, **opts)
+        return strategy.execute(stats=stats, covariates=covariates, ir_only=True, context=context, **opts)
 
-    def get_strategy(self, unit_type, measures=None, segment_by=None, where=None):
+    def get_strategy(self, unit_type, measures=None, segment_by=None, where=None, context=None):
+        # TODO: incorporate context into strategy evaluation
         return EvaluationStrategy.from_spec(
             self, unit_type, measures=measures, segment_by=segment_by, where=where
         )

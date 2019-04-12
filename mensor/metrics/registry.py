@@ -35,14 +35,15 @@ class MetricRegistry(object):
     def unregister(self, name):
         del self._metrics[name]
 
-    def evaluate(self, metrics, segment_by=None, where=None, **opts):
+    def evaluate(self, metrics, segment_by=None, where=None, context=None, **opts):
         """
-        Parameters:
+        Args:
             metrics (str, list<str): A metric (or list of metrics) to evaluate.
             segment_by (str, list<str>): A dimension or list of dimensions by which
                 to segment the metric aggregation.
             where (dict, BaseConstraint): A representation of the constraints to
                 apply during this evaluation.
+            context (dict, None): Context of metric evaluation.
             opts (dict): Additional options to pass through to the metric
                 evaluation process.
         """
@@ -57,8 +58,8 @@ class MetricRegistry(object):
         if not isinstance(segment_by, list):
             segment_by = [segment_by]
 
-        for strategy, required_marginal_segmentation, metrics in self._group_metric_evaluations(metrics=metrics, segment_by=segment_by, where=where):
-            result = metrics[0].evaluate(strategy, required_marginal_segmentation, compatible_metrics=metrics[1:], **opts)
+        for strategy, required_marginal_segmentation, metrics in self._group_metric_evaluations(metrics=metrics, segment_by=segment_by, where=where, context=context):
+            result = metrics[0].evaluate(strategy, required_marginal_segmentation, compatible_metrics=metrics[1:], context=context, **opts)
 
             result = EvaluatedMeasures.for_measures(result, stats_registry=self.measures._stats_registry)
 
@@ -81,7 +82,7 @@ class MetricRegistry(object):
         for strategy, required_marginal_segmentation, metrics in self._group_metric_evaluations(metrics=metrics, segment_by=segment_by, where=where):
             yield metrics, metrics[0].get_ir(strategy, required_marginal_segmentation, compatible_metrics=metrics[1:], **opts)
 
-    def _get_strategy_for_metric(self, metric, segment_by, where):
+    def _get_strategy_for_metric(self, metric, segment_by, where, context):
         measures = metric.required_measures
         if metric.required_segmentation:
             segment_by = segment_by + list(set(metric.required_segmentation).difference(segment_by))
@@ -99,13 +100,14 @@ class MetricRegistry(object):
             metric.unit_type,
             measures=measures,
             segment_by=segment_by,
-            where=where
+            where=where,
+            context=context
         )
 
-    def _group_metric_evaluations(self, metrics, segment_by, where, **opts):
+    def _group_metric_evaluations(self, metrics, segment_by, where, context, **opts):
 
         metrics = [self._metrics[metric] if not isinstance(metric, Metric) else metric for metric in metrics]
-        strategies = {metric: self._get_strategy_for_metric(metric, segment_by, where, **opts) for metric in metrics}
+        strategies = {metric: self._get_strategy_for_metric(metric, segment_by, where, context, **opts) for metric in metrics}
 
         for metric in metrics:
             strategy = strategies[metric]

@@ -78,6 +78,9 @@ class SequenceMap(object):
     def pop(self, value, default=None):
         return self.__values.pop(value, default)
 
+    def values(self):
+        return self.__values.keys()
+
     @property
     def first(self):
         return next(iter(self))

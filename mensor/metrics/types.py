@@ -92,22 +92,24 @@ class Metric(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
 
     # Metric evaluation
 
-    def evaluate(self, strategy, marginalise=None, compatible_metrics=None, **opts):
+    def evaluate(self, strategy, marginalise=None, compatible_metrics=None, context=None, **opts):
         # TODO: Check that strategy has required measures, segmentation and constraints.
         implementation = self.implementation_for_strategy(strategy)
         return implementation.evaluate(
             strategy,
             marginalise=marginalise,
             compatible_metrics=compatible_metrics,
+            context=context,
             **self.opts.process(**opts)
         )
 
-    def get_ir(self, strategy, marginalise=None, compatible_metrics=None, **opts):
+    def get_ir(self, strategy, marginalise=None, compatible_metrics=None, context=None, **opts):
         implementation = self.implementation_for_strategy(strategy)
         return implementation.get_ir(
             strategy,
             marginalise=marginalise,
             compatible_metrics=compatible_metrics,
+            context=context,
             **self.opts.process(**opts)
         )
 
@@ -186,11 +188,11 @@ class MetricImplementation(metaclass=SubclassRegisteringABCMeta):
         return self
 
     @abstractmethod
-    def evaluate(self, strategy, marginalise=None, compatible_metrics=None, **opts):
+    def evaluate(self, strategy, marginalise=None, compatible_metrics=None, context=None, **opts):
         raise NotImplementedError
 
     @abstractmethod
-    def get_ir(self, strategy, marginalise=None, compatible_metrics=None, **opts):
+    def get_ir(self, strategy, marginalise=None, compatible_metrics=None, context=None, **opts):
         raise NotImplementedError
 
     @abstractmethod

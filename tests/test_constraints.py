@@ -24,9 +24,9 @@ class ConstraintTests(unittest.TestCase):
 
         for rel, value in valid_ops.items():
             c = Constraint('a', rel, value)
-            self.assertEquals(c.field, 'a')
-            self.assertEquals(c.relation, rel)
-            self.assertEquals(c.value, value)
+            self.assertEqual(c.field, 'a')
+            self.assertEqual(c.relation, rel)
+            self.assertEqual(c.value, value)
             self.assertFalse(c.generic)
 
         for rel, value in invalid_ops.items():

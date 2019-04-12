@@ -52,8 +52,6 @@ class MutableMeasureProvider(MeasureProvider):
         self.measures = measures
         self.provisions = provisions
 
-        self.opts.add_option('context', 'A dictionary specifying runtime specified context.', required=False, default={})
-
     def _get_dimensions_from_specs(self, cls, specs):
         dims = SequenceMap()
         if specs is None:
@@ -94,6 +92,12 @@ class MutableMeasureProvider(MeasureProvider):
         return set(self._identifiers.keys())
 
     def identifier_for_unit(self, unit_type):
+        if unit_type is None:
+            return None
+        if isinstance(unit_type, str) and unit_type.startswith('!'):
+            if unit_type[1:] != self.name:
+                raise ValueError("No provider of name '{}' (this provider is named '{}').".format(unit_type[1:], self.name))
+            return None
         if isinstance(unit_type, _StatisticalUnitIdentifier):
             if unit_type.provider is self:
                 return unit_type
@@ -106,9 +110,9 @@ class MutableMeasureProvider(MeasureProvider):
         raise ValueError("No such identifier: '{}'.".format(unit_type))
 
     def foreign_keys_for_unit(self, unit_type=None):
+        unit_type = self.identifier_for_unit(unit_type)
         if unit_type is None:
             return self.identifiers
-        unit_type = self.identifier_for_unit(unit_type)
 
         foreign_keys = SequenceMap()
         for foreign_key in self.identifiers:
@@ -119,7 +123,7 @@ class MutableMeasureProvider(MeasureProvider):
         return foreign_keys
 
     def reverse_foreign_keys_for_unit(self, unit_type=None):
-        return {}
+        return SequenceMap()
 
     def _unit_has_foreign_key(self, unit_type, foreign_key):
         return unit_type.is_unique
@@ -140,9 +144,9 @@ class MutableMeasureProvider(MeasureProvider):
         return self
 
     def dimensions_for_unit(self, unit_type=None, include_partitions=True):
+        unit_type = self.identifier_for_unit(unit_type)
         if unit_type is None:
             return self.dimensions
-        unit_type = self.identifier_for_unit(unit_type)
 
         dimensions = SequenceMap()
         for dimension in self.dimensions:
@@ -190,9 +194,9 @@ class MutableMeasureProvider(MeasureProvider):
         return self
 
     def measures_for_unit(self, unit_type=None):
+        unit_type = self.identifier_for_unit(unit_type)
         if unit_type is None:
             return self.measures
-        unit_type = self.identifier_for_unit(unit_type)
 
         measures = SequenceMap()
         for measure in self.measures:
@@ -235,7 +239,7 @@ class MutableMeasureProvider(MeasureProvider):
 
     # Evaluation
     def _prepare_evaluation_args(f):
-        def wrapped(self, unit_type, measures=None, segment_by=None, where=None, joins=None, stats_registry=None, stats=True, covariates=False, **opts):
+        def wrapped(self, unit_type, measures=None, segment_by=None, where=None, joins=None, stats_registry=None, stats=True, covariates=False, context=None, **opts):
             unit_type = self.identifier_for_unit(unit_type)
             if not isinstance(measures, (SequenceMap, _ProvidedFeature)):
                 measures = SequenceMap() if measures is None else self.resolve(unit_type=unit_type, features=measures, role='measure')
@@ -244,20 +248,23 @@ class MutableMeasureProvider(MeasureProvider):
             where = Constraint.from_spec(where)
             joins = joins or []
             stats_registry = stats_registry or global_stats_registry
-            opts = self.opts.process(**opts)
-            return f(self, unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, stats_registry=stats_registry, stats=stats, covariates=covariates, **opts)
+            context = context or {}
+
+            # opts = self.opts.process(**opts)
+            return f(self, unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, stats_registry=stats_registry, stats=stats, covariates=covariates, context=context, **opts)
         return wrapped
 
     @_prepare_evaluation_args
     def evaluate(self, unit_type, measures=None, segment_by=None, where=None,
-                 joins=None, stats_registry=None, stats=True, covariates=False, **opts):
+                 joins=None, stats_registry=None, stats=True, covariates=False,
+                 context=None, **opts):
         """
         This method evaluates the requested `measures` in this MeasureProvider
         segmented by the dimensions in `segment_by` after joining in the
         joins in `joins` and subject to the constraints in `where`; treating
         `unit_type` objects as indivisible.
 
-        Parameters:
+        Args:
             unit_type (str, _StatisticalUnitIdentifier): The unit to treat as
                 indivisible in this analysis.
             measures (list<str, _Measure>): The measures to be calculated.
@@ -270,6 +277,7 @@ class MutableMeasureProvider(MeasureProvider):
             covariates (bool, list<tuple>): Whether to compute all covariates
                 (if bool) or else a list of tuples of measures within which
                 all pairs of covariates should be computed.
+            context (dict): The context in which to perform the evaluation.
             opts (dict): Additional arguments to be passed onto `._evalaute`
                 implementations.
 
@@ -316,6 +324,7 @@ class MutableMeasureProvider(MeasureProvider):
             stats_registry=stats_registry,
             stats=stats and not joins_post,
             covariates=covariates,
+            context=context,
             **opts
         )
 
@@ -432,7 +441,8 @@ class MutableMeasureProvider(MeasureProvider):
         return measures_pre, segment_by_pre, where_pre, measures_post, segment_by_post, where_post
 
     def _evaluate(self, unit_type, measures=None, segment_by=None, where=None,
-                  joins=None, stats_registry=None, stats=True, covariates=False, **opts):
+                  joins=None, stats_registry=None, stats=True, covariates=False,
+                  context=None, **opts):
         """
         MeasureProviders must in their _evaluate function (in logical order):
 
@@ -463,7 +473,8 @@ class MutableMeasureProvider(MeasureProvider):
 
     @_prepare_evaluation_args
     def get_ir(self, unit_type, measures=None, segment_by=None, where=None,
-               joins=None, stats_registry=None, stats=True, covariates=False, **opts):
+               joins=None, stats_registry=None, stats=True, covariates=False,
+               context=None, **opts):
         # Get intermediate representation for this evaluation query
         if not all(isinstance(j, Join) and j.compatible for j in joins):
             raise RuntimeError("All joins for IR must be compatible with this provider.")
@@ -476,11 +487,13 @@ class MutableMeasureProvider(MeasureProvider):
             stats_registry=stats_registry,
             stats=stats,
             covariates=covariates,
+            context=context,
             **opts
         )
 
     def _get_ir(self, unit_type, measures=None, segment_by=None, where=None,
-                joins=None, stats_registry=None, stats=True, covariates=False, **opts):
+                joins=None, stats_registry=None, stats=True, covariates=False,
+                context=None, **opts):
         raise NotImplementedError
 
     # Constraint interpretation
@@ -494,7 +507,7 @@ class MutableMeasureProvider(MeasureProvider):
 
     def _constraint_map(self, kind):
         """
-        Parameters:
+        Args:
             kind (CONSTRAINTS): The type of constraint for which to extract the
                 internal represtation of the mapper.
         """

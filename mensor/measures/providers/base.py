@@ -1,3 +1,4 @@
+"""Base implementation of `MeasureProvider`."""
 import os
 import uuid
 from abc import abstractmethod, abstractproperty
@@ -5,13 +6,13 @@ from abc import abstractmethod, abstractproperty
 import six
 import yaml
 
-from mensor.utils import OptionsMixin, SequenceMap
+from mensor.utils import SequenceMap
 from mensor.utils.registry import SubclassRegisteringABCMeta
 
 from ..common.feature_spec import FeatureSpec
 
 
-class MeasureProvider(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
+class MeasureProvider(metaclass=SubclassRegisteringABCMeta):
     """
     The primitive abstract class that is the parent of all measure providers.
 
@@ -19,13 +20,30 @@ class MeasureProvider(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
     measures in the `mensor` universe. Every `MeasureProvider` instance can be
     thought of as a proxy to a data source, allowing identifiers, measures and
     dimensions to be evaluated in different contexts; and the class exists
-    simply to provide metadata about the data stored therein.
+    to provide metadata about the data stored therein and to collect the data
+    at runtime.
     """
 
     REGISTRY_KEYS = None
 
     @classmethod
     def from_yaml(cls, yml):
+        """
+        Populate a MeasureProvider instance from a YAML configuration.
+
+        Note: Not all implementations of a measure provider will implement this
+        method.
+
+        Args:
+            yml (str): The yaml string (or path thereto) that encodes the
+                configuration of of the measure provider. One-line strings imply
+                that the string should be interpreted as a filename. The YAML
+                file should describe a dictionary with keys corresponding to the
+                constructor arguments of this measure provider.
+
+        Returns:
+            MeasureProvider instance: configured as per yaml specification.
+        """
         if '\n' not in yml:
             with open(os.path.expanduser(yml)) as f:
                 return cls.from_dict(yaml.safe_load(f))
@@ -33,18 +51,39 @@ class MeasureProvider(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
             return cls.from_dict(yaml.safe_load(yml))
 
     @classmethod
-    def from_dict(cls, d):
-        assert 'kind' in d
-        assert d.get('role') in (None, 'provider')
-        klass = cls.for_kind(d['kind'])
-        return klass._from_dict(d)
+    def from_dict(cls, dct):
+        """
+        Populate a MeasureProvider instance from a Python dictionary.
 
-    def _from_dict(cls, d):
+        Note: Not all implementations of a measure provider will implement this
+        method.
+
+        Args:
+            d (dict): A dictionary with keys corresponding to constructor
+                arguments.
+
+        Returns:
+            MeasureProvider instance: configured as per dictionary
+                specification.
+        """
+        assert 'kind' in dct
+        assert dct.get('role') in (None, 'provider')
+        klass = cls.for_kind(dct['kind'])
+        return klass._from_dict(dct)
+
+    @classmethod
+    def _from_dict(cls, dct):
         raise NotImplementedError
 
     def __init__(self, name=None):
         # TODO: Support adding metadata like measure provider maintainer
-        self.name = name or str(uuid.uuid4())
+        self.name = name or uuid.uuid4().hex
+
+    def __hash__(self):
+        return hash(self.name)
+
+    def __eq__(self, name):
+        return self.name == name
 
     # Statistical unit specifications
     @abstractproperty
@@ -86,9 +125,9 @@ class MeasureProvider(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
         This method resolves one or more features optionally associated with a
         unit_type and a role. Note that this method is concerned about
         *functional* resolution, so if `role='dimension'` both identifiers and
-        measures will be resolved, since they can be used as dimensions.
+        measures will be resolved, since they can both be used as dimensions.
 
-        Parameters:
+        Args:
             names (str, list<str>): A name or list of names to resolve.
             unit_type (str, None): A unit type for which the resolution should
                 be done.
@@ -146,12 +185,14 @@ class MeasureProvider(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
 
     @abstractmethod
     def evaluate(self, unit_type, measures=None, segment_by=None, where=None,
-                 joins=None, stats_registry=None, stats=True, covariates=False, **opts):
+                 joins=None, stats_registry=None, stats=True, covariates=False,
+                 context=None, **opts):
         pass
 
     @abstractmethod
     def get_ir(self, unit_type, measures=None, segment_by=None, where=None,
-               joins=None, stats_registry=None, stats=True, covariates=False, **opts):
+               joins=None, stats_registry=None, stats=True, covariates=False,
+               context=None, **opts):
         pass
 
     # MeasureProvider compatibility
@@ -165,8 +206,18 @@ class MeasureProvider(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
         return False
 
     # Runtime introspection
-    def show(self, *unit_types, kind=None):
-        unit_types = [self.identifier_for_unit(ut) for ut in unit_types] if len(unit_types) > 0 else sorted(self.identifiers)
+    def show(self, *unit_types, kind=None, context=None):
+        """
+        Print the available features of this measure provider.
+
+        This method is designed for use by end-users. Programmatic use-cases
+        should use the Python API.
+        """
+        print(self._show(*unit_types, kind=kind, context=context))
+
+    def _show(self, *unit_types, kind=None, context=None):
+        out = []
+        unit_types = tuple(self.identifier_for_unit(ut) for ut in unit_types) if len(unit_types) > 0 else tuple(sorted(self.identifiers))
         if isinstance(kind, str):
             kind = [kind]
         if not kind:
@@ -193,14 +244,16 @@ class MeasureProvider(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
                 if not len(feature_set) or len(feature_set) == 1 and feature_set.first == unit_type:
                     continue
                 if not section_title_shown:
-                    print(section_title)
+                    out.append(section_title)
                     section_title_shown = True
-                print("    {}:".format(feature_name))
+                out.append("    {}:".format(feature_name))
                 for feature in sorted(feature_set):
                     if feature != unit_type:
-                        print(
+                        out.append(
                             "        - {}{}".format(
                                 feature.mask,
                                 " [{}]".format(feature.desc) if feature.desc else ""
                             )
                         )
+
+        return "\n".join(out)

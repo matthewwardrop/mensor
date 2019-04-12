@@ -64,6 +64,9 @@ class SQLDialect(object):
 
     TEMPLATE_TABLE = textwrap.dedent("""
         SELECT
+            {%- if not dimensions and not measures %}
+            1
+            {%- endif %}
             {%- for dimension in dimensions %}
             {% if loop.index0 > 0 or identifiers%}, {% endif %}{{ dimension.expr | col }} AS {{ dimension.fieldname(role='dimension') | col }}
             {%- endfor %}
@@ -85,12 +88,12 @@ class SQLDialect(object):
         return {
             CONSTRAINTS.AND: lambda w, f, m: '({})'.format(' AND '.join(m(f, o) for o in w.operands)),
             CONSTRAINTS.OR: lambda w, f, m: '({})'.format(' OR '.join(m(f, o) for o in w.operands)),
-            CONSTRAINTS.EQUALITY: lambda w, f, m: "{} = {}".format(f['dimensions'][w.field], ve(w.value)),
-            CONSTRAINTS.INEQUALITY_GT: lambda w, f, m: "{} > {}".format(f['dimensions'][w.field], ve(w.value)),
-            CONSTRAINTS.INEQUALITY_GTE: lambda w, f, m: "{} >= {}".format(f['dimensions'][w.field], ve(w.value)),
-            CONSTRAINTS.INEQUALITY_LT: lambda w, f, m: "{} < {}".format(f['dimensions'][w.field], ve(w.value)),
-            CONSTRAINTS.INEQUALITY_LTE: lambda w, f, m: "{} <= {}".format(f['dimensions'][w.field], ve(w.value)),
-            CONSTRAINTS.IN: lambda w, f, m: "{} IN ({})".format(f['dimensions'][w.field], ", ".join(ve(v) for v in w.value)),
+            CONSTRAINTS.EQUALITY: lambda w, f, m: "{} = {}".format(f['dimensions'].get(w.field) or f['measures'][w.field], ve(w.value)),
+            CONSTRAINTS.INEQUALITY_GT: lambda w, f, m: "{} > {}".format(f['dimensions'].get(w.field) or f['measures'][w.field], ve(w.value)),
+            CONSTRAINTS.INEQUALITY_GTE: lambda w, f, m: "{} >= {}".format(f['dimensions'].get(w.field) or f['measures'][w.field], ve(w.value)),
+            CONSTRAINTS.INEQUALITY_LT: lambda w, f, m: "{} < {}".format(f['dimensions'].get(w.field) or f['measures'][w.field], ve(w.value)),
+            CONSTRAINTS.INEQUALITY_LTE: lambda w, f, m: "{} <= {}".format(f['dimensions'].get(w.field) or f['measures'][w.field], ve(w.value)),
+            CONSTRAINTS.IN: lambda w, f, m: "{} IN ({})".format(f['dimensions'].get(w.field) or f['measures'][w.field], ", ".join(ve(v) for v in w.value)),
         }
 
     # SQL rendering helpers
@@ -226,17 +229,17 @@ class SQLMeasureProvider(MutableMeasureProvider):
             'val': self._val
         })
 
-    def _sql(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
+    def _sql(self, unit_type, measures, segment_by, where, joins, stats, covariates, context, **opts):
         assert all(self.is_compatible_with(es.provider) and es.joins_all_compatible for es in self.provisions.values())
         return self._template_environment.get_template(self._base_sql).render(
-            **(opts['context'] or {}),
+            **context,
             **{
                 name: es.execute(ir_only=True, stats=False)
                 for name, es in self.provisions.items()
             }
         )
 
-    def _evaluate(self, unit_type, measures, segment_by, where, joins, stats_registry, stats, covariates, **opts):
+    def _evaluate(self, unit_type, measures, segment_by, where, joins, stats_registry, stats, covariates, context, **opts):
         df = self.executor.query(self.get_sql(
             unit_type,
             measures=measures,
@@ -246,6 +249,7 @@ class SQLMeasureProvider(MutableMeasureProvider):
             stats_registry=stats_registry,
             stats=stats,
             covariates=covariates,
+            context=context,
             **opts
         ))
         df.columns = [self.dialect.column_decode(col) for col in df.columns]
@@ -254,11 +258,11 @@ class SQLMeasureProvider(MutableMeasureProvider):
     def get_sql(self, *args, **kwargs):
         return self.get_ir(*args, **kwargs)
 
-    def _get_ir(self, unit_type, measures, segment_by, where, joins, stats_registry, stats, covariates, **opts):
+    def _get_ir(self, unit_type, measures, segment_by, where, joins, stats_registry, stats, covariates, context, **opts):
         field_map = self._field_map(unit_type, measures, segment_by, where, joins)
         rebase_agg = not unit_type.is_unique
         sql = self._template_environment.get_template(self.dialect.TEMPLATE_BASE).render(
-            _sql=self._sql(unit_type=unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, stats=stats, covariates=covariates, **opts),
+            _sql=self._sql(unit_type=unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, stats=stats, covariates=covariates, context=context, **opts),
             field_map=field_map,
             provider=self,
             table_name=self._table_name(unit_type),
@@ -372,11 +376,11 @@ class SQLTableMeasureProvider(SQLMeasureProvider):
     REGISTRY_KEYS = ['sql_table']
     COLUMN_EXPR_PREAPPLIED = True
 
-    def _sql(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts):
+    def _sql(self, unit_type, measures, segment_by, where, joins, stats, covariates, context, **opts):
         if len(self.identifiers) + len(self.dimensions) + len(self.measures) == 0:
             raise RuntimeError("No columns identified in table.")
         return self._template_environment.get_template(self.dialect.TEMPLATE_TABLE).render(
-            table=SQLMeasureProvider._sql(self, unit_type, measures, segment_by, where, joins, stats, covariates, **opts),
+            table=SQLMeasureProvider._sql(self, unit_type, measures, segment_by, where, joins, stats, covariates, context, **opts),
             identifiers=None,
             measures=[m for m in measures if m != 'count' and not m.external],
             dimensions=[d for d in segment_by if not d.external],

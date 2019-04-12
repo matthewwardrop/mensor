@@ -285,6 +285,16 @@ class _ResolvedFeature(_FeatureAttrsMixin):
         self.providers = providers
 
     @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, name):
+        if not re.match(r'^(?:\!)?(?![0-9])[\w\._:]+$', name):
+            raise ValueError("Invalid feature name '{}'. All names must consist only of word characters, numbers, underscores and colons, and cannot start with a number.".format(name))
+        self._name = name
+
+    @property
     def path(self):
         if self.unit_type:
             return '/'.join([self.unit_type.name, self.via_name])
@@ -357,9 +367,21 @@ class _Dimension(_ProvidedFeature):
 class _StatisticalUnitIdentifier(_ProvidedFeature):
 
     def __init__(self, name, expr=None, desc=None, role='foreign', provider=None):
-        _ProvidedFeature.__init__(self, name, expr=expr, desc=desc, shared=True, provider=provider)
         assert role in ('primary', 'unique', 'foreign', 'relation')
         self.role = role
+        _ProvidedFeature.__init__(self, name, expr=expr, desc=desc, shared=True, provider=provider)
+
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, name):
+        if not re.match(r'^(?:\!)?(?![0-9])[\w\._:]+$', name):
+            raise ValueError("Invalid feature name '{}'. All names must consist only of word characters, numbers, underscores and colons, and cannot start with a number.".format(name))
+        if name.startswith('!') and not self.is_relation:
+            raise RuntimeError("Only provider level relations can be prefixed with '!'.")
+        self._name = name
 
     @property
     def unit_type(self):
@@ -468,7 +490,7 @@ class _Measure(_ProvidedFeature):
         This is a convenience method for subclasses to use to get the
         target fields associated with a particular distribution.
 
-        Parameters:
+        Args:
             stats (bool): Whether this measure is being aggregated into
                 distribution statistics.
 

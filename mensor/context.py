@@ -42,7 +42,7 @@ class EvaluationContext(object):
         else:
             f = self.metrics.evaluate
         return f(
-            *args, where=self.constraints & Constraint.from_spec(where), measure_opts={'context': self.context}, **kwargs
+            *args, where=self.constraints & Constraint.from_spec(where), context=self.context, measure_opts={}, **kwargs
         )
 
     def evaluate_measures(self, *args, where=None, ir_only=False, **kwargs):
