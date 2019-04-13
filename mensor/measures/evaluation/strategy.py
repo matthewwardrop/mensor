@@ -5,8 +5,8 @@ from enum import Enum
 from mensor.constraints import And, Constraint
 from mensor.utils import SequenceMap
 
-from ..common.features import _StatisticalUnitIdentifier
-from ..common.join import Join
+from ..structures.features import _StatisticalUnitIdentifier
+from ..structures.join import Join
 
 FeatureBundle = namedtuple('FeatureBundle', ['unit_type', 'dimensions', 'measures'])
 

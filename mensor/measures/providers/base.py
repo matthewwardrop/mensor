@@ -9,7 +9,7 @@ import yaml
 from mensor.utils import SequenceMap
 from mensor.utils.registry import SubclassRegisteringABCMeta
 
-from ..common.feature_spec import FeatureSpec
+from ..structures.feature_spec import FeatureSpec
 
 
 class MeasureProvider(metaclass=SubclassRegisteringABCMeta):

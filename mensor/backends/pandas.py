@@ -5,8 +5,8 @@ import pandas as pd
 
 from mensor.constraints import CONSTRAINTS
 from mensor.measures import MutableMeasureProvider
-from mensor.measures.common.features import _Measure
 from mensor.measures.registries import global_stats_registry
+from mensor.measures.structures.features import _Measure
 
 
 class PandasMeasureProvider(MutableMeasureProvider):

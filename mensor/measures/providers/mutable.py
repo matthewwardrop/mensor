@@ -4,10 +4,10 @@ from mensor.constraints import And, Constraint, CONSTRAINTS
 from mensor.utils import SequenceMap
 
 from .base import MeasureProvider
-from ..common.features import _Dimension, _Measure, _ProvidedFeature, _StatisticalUnitIdentifier
-from ..common.join import Join
 from ..evaluation.output import EvaluatedMeasures
 from ..registries import global_stats_registry
+from ..structures.features import _Dimension, _Measure, _ProvidedFeature, _StatisticalUnitIdentifier
+from ..structures.join import Join
 
 
 __all__ = ['MutableMeasureProvider']

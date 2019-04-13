@@ -38,7 +38,7 @@ which does a reasonable job of demonstrating most of mensor's features.
 
 For the purposes of this tutorial, we will back this schema with pandas
 dataframes loaded from CSV files, but as far as mensor is concerned, the source
-of the data is irrelevant. The following Python code sets up a MeasureRegistry
+of the data is irrelevant. The following Python code sets up a MetaMeasureProvider
 which connects to data following the above schema. It is possible to easily set
 up configuration from YAML files, but we defer such consideration to the
 :doc:`deployment` documentation.
@@ -46,10 +46,10 @@ up configuration from YAML files, but we defer such consideration to the
 .. code:: python
 
     import os
-    from mensor.measures.registry import MeasureRegistry
+    from mensor.measures import MetaMeasureProvider
     from mensor.backends.pandas import PandasMeasureProvider
 
-    registry = MeasureRegistry()
+    registry = MetaMeasureProvider()
 
     data_dir = "<path to checked out Mensor repository>/tests/data"
 
@@ -107,7 +107,7 @@ The role of MeasureProviders
 ----------------------------
 
 In the above code, we registered several :code:`MeasureProvider` instances with
-a :code:`MeasureRegistry` instance. Each :code:`MeasureProvider` has the
+a :code:`MetaMeasureProvider` instance. Each :code:`MeasureProvider` has the
 responsibility of being able to provide everything it promised upon request, and
 we can test this for any particular :code:`MeasureProvider` directly. For
 example, we can ask the :code:`transactions` measure provider for the sum
@@ -131,7 +131,7 @@ of statistics.
     This documentation is incomplete on this point, and will be extended once
     this component of mensor solidifies.
 
-Evaluating measures from the MeasureRegistry
+Evaluating measures from the MetaMeasureProvider
 --------------------------------------------
 
 While it is nice that you can directly evaluate measure from a single

@@ -3,13 +3,13 @@ import unittest
 
 from mensor.backends.pandas import PandasMeasureProvider
 from mensor.constraints import Constraint
-from mensor.measures import MeasureRegistry
+from mensor.measures import MetaMeasureProvider
 
 
 class EvaluationStrategyTests(unittest.TestCase):
 
     def setUp(self):
-        self.registry = MeasureRegistry()
+        self.registry = MetaMeasureProvider()
 
         data_dir = os.path.join(os.path.dirname(__file__), 'data')
 

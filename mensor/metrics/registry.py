@@ -3,8 +3,8 @@ import os
 import pandas as pd
 
 from mensor.constraints import Constraint
-from mensor.measures.evaluation.output import EvaluatedMeasures
-from mensor.measures.registry import MeasureRegistry
+from mensor.measures import EvaluatedMeasures
+from mensor.measures import MetaMeasureProvider
 
 from .types import Metric
 
@@ -12,7 +12,7 @@ from .types import Metric
 class MetricRegistry(object):
 
     def __init__(self, measure_registry=None):
-        self.measures = measure_registry or MeasureRegistry()
+        self.measures = measure_registry or MetaMeasureProvider()
         self._metrics = {}
 
     def register(self, metric):

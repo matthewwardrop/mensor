@@ -1,22 +1,22 @@
-"""Implementation of MeasureRegistry, the meta-MeasureProvider."""
+"""Implementation of MetaMeasureProvider."""
 
 import os
 from collections import Counter, namedtuple
 
 from mensor.utils import nested_dict_copy, SequenceMap
 
-from .common.features import _ProvidedFeature, _ResolvedFeature
-from .evaluation.strategy import EvaluationStrategy
-from .providers.base import MeasureProvider
-from .registries import global_stats_registry, StatsRegistry
+from .base import MeasureProvider
+from ..evaluation.strategy import EvaluationStrategy
+from ..registries import global_stats_registry, StatsRegistry
+from ..structures.features import _ProvidedFeature, _ResolvedFeature
 
-__all__ = ['MeasureRegistry']
+__all__ = ['MetaMeasureProvider']
 
 
 Provision = namedtuple('Provision', ['provider', 'join_prefix', 'measures', 'dimensions'])
 
 
-class MeasureRegistry(MeasureProvider):
+class MetaMeasureProvider(MeasureProvider):
     """
     A `MeasureProvider` subclass that acts as a host for other `MeasureProvider`
     instances, allowing evaluations of measures that span multiple providers.
@@ -53,7 +53,7 @@ class MeasureRegistry(MeasureProvider):
             self.measures = measures or {}
 
         def copy(self):
-            return MeasureRegistry.GraphCache(
+            return MetaMeasureProvider.GraphCache(
                 **{
                     key: nested_dict_copy(getattr(self, key))
                     for key in [
@@ -72,7 +72,7 @@ class MeasureRegistry(MeasureProvider):
             # Require that each provider have at least one primary key and a
             # measure "count".
             # TODO: Uncomment these checks and retain compatibility with nested
-            # MeasureRegistry instances.
+            # MetaMeasureProvider instances.
             # if len(list(identifier for identifier in provider.identifiers if identifier.is_unique)) == 0:
             #     raise RuntimeError("MeasureProvider '{}' does not have at least one unique identifier.".format(provider))
             # if 'count' not in provider.measures:
@@ -167,7 +167,7 @@ class MeasureRegistry(MeasureProvider):
         MeasureProvider.__init__(self, name)
         self._providers = SequenceMap()
         self._stats_registry = StatsRegistry(fallback=global_stats_registry)
-        self._cache = MeasureRegistry.GraphCache()
+        self._cache = MetaMeasureProvider.GraphCache()
 
     # MeasureProvider registration
 
@@ -221,7 +221,7 @@ class MeasureRegistry(MeasureProvider):
         return provider
 
     def _cache_refresh(self):
-        self._cache = MeasureRegistry.GraphCache()
+        self._cache = MetaMeasureProvider.GraphCache()
         for provider in self._providers.values():
             self._cache.register(provider)
 
