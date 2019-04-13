@@ -40,8 +40,8 @@ class PandasMeasureProvider(MutableMeasureProvider):
             return self._data
         return self._data_transform(self, self._data, self.provisions)
 
-    def _evaluate(self, unit_type, measures, where=None, segment_by=None,
-                  stats_registry=None, stats=True, covariates=False, context=None, **opts):
+    def _evaluate(self, unit_type, measures, segment_by, where, joins, stats,
+                  covariates, context, stats_registry, **opts):
 
         assert stats_registry is not None
         assert not any(measure.external for measure in measures)

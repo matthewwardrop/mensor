@@ -32,14 +32,14 @@ class MutableMeasureProvider(MeasureProvider):
         pass
 
     @classmethod
-    def _from_dict(cls, d):
+    def _from_dict(cls, dct):
         instance = cls(
-            name=d.get('name'),
-            identifiers=d.get('identifiers'),
-            measures=d.get('measures'),
-            dimensions=d.get('dimensions'),
-            provisions=d.get('provisions'),
-            **d.get('opts', {})
+            name=dct.get('name'),
+            identifiers=dct.get('identifiers'),
+            measures=dct.get('measures'),
+            dimensions=dct.get('dimensions'),
+            provisions=dct.get('provisions'),
+            **dct.get('opts', {})
         )
         return instance
 
@@ -82,7 +82,7 @@ class MutableMeasureProvider(MeasureProvider):
     def identifiers(self, identifiers):
         self._identifiers = self._get_dimensions_from_specs(_StatisticalUnitIdentifier, identifiers)
 
-    def add_identifier(self, unit_type=None, expr=None, desc=None, role='foreign'):
+    def add_identifier(self, unit_type, expr=None, desc=None, role='foreign'):
         identifier = _StatisticalUnitIdentifier(unit_type, expr=expr, desc=desc, role=role, provider=self)
         self._identifiers.append(identifier)
         return self
@@ -109,7 +109,7 @@ class MutableMeasureProvider(MeasureProvider):
                 return identifier.with_mask(unit_type if isinstance(unit_type, str) else unit_type.name)
         raise ValueError("No such identifier: '{}'.".format(unit_type))
 
-    def foreign_keys_for_unit(self, unit_type=None):
+    def foreign_keys_for_unit(self, unit_type):
         unit_type = self.identifier_for_unit(unit_type)
         if unit_type is None:
             return self.identifiers
@@ -122,7 +122,7 @@ class MutableMeasureProvider(MeasureProvider):
                 foreign_keys.append(foreign_key)
         return foreign_keys
 
-    def reverse_foreign_keys_for_unit(self, unit_type=None):
+    def reverse_foreign_keys_for_unit(self, unit_type):
         return SequenceMap()
 
     def _unit_has_foreign_key(self, unit_type, foreign_key):
@@ -143,7 +143,7 @@ class MutableMeasureProvider(MeasureProvider):
         self._dimensions.append(dimension)
         return self
 
-    def dimensions_for_unit(self, unit_type=None, include_partitions=True):
+    def dimensions_for_unit(self, unit_type, include_partitions=True):
         unit_type = self.identifier_for_unit(unit_type)
         if unit_type is None:
             return self.dimensions
@@ -173,7 +173,7 @@ class MutableMeasureProvider(MeasureProvider):
         self._dimensions.append(dimension)
         return self
 
-    def partitions_for_unit(self, unit_type=None):
+    def partitions_for_unit(self, unit_type):
         return {
             dimension: dimension for dimension in self.dimensions_for_unit(unit_type) if dimension.partition
         }
@@ -193,7 +193,7 @@ class MutableMeasureProvider(MeasureProvider):
         self._measures.append(measure)
         return self
 
-    def measures_for_unit(self, unit_type=None):
+    def measures_for_unit(self, unit_type):
         unit_type = self.identifier_for_unit(unit_type)
         if unit_type is None:
             return self.measures
@@ -239,7 +239,7 @@ class MutableMeasureProvider(MeasureProvider):
 
     # Evaluation
     def _prepare_evaluation_args(f):
-        def wrapped(self, unit_type, measures=None, segment_by=None, where=None, joins=None, stats_registry=None, stats=True, covariates=False, context=None, **opts):
+        def wrapped(self, unit_type, measures=None, segment_by=None, where=None, joins=None, stats=True, covariates=False, context=None, stats_registry=None, **opts):
             unit_type = self.identifier_for_unit(unit_type)
             if isinstance(measures, (str, _ProvidedFeature)):
                 measures = [measures]
@@ -253,13 +253,13 @@ class MutableMeasureProvider(MeasureProvider):
             context = context or {}
 
             # opts = self.opts.process(**opts)
-            return f(self, unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, stats_registry=stats_registry, stats=stats, covariates=covariates, context=context, **opts)
+            return f(self, unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, stats=stats, covariates=covariates, context=context, stats_registry=stats_registry, **opts)
         return wrapped
 
     @_prepare_evaluation_args
     def evaluate(self, unit_type, measures=None, segment_by=None, where=None,
-                 joins=None, stats_registry=None, stats=True, covariates=False,
-                 context=None, **opts):
+                 joins=None, stats=True, covariates=False, context=None,
+                 stats_registry=None, **opts):
         """
         This method evaluates the requested `measures` in this MeasureProvider
         segmented by the dimensions in `segment_by` after joining in the
@@ -442,9 +442,8 @@ class MutableMeasureProvider(MeasureProvider):
 
         return measures_pre, segment_by_pre, where_pre, measures_post, segment_by_post, where_post
 
-    def _evaluate(self, unit_type, measures=None, segment_by=None, where=None,
-                  joins=None, stats_registry=None, stats=True, covariates=False,
-                  context=None, **opts):
+    def _evaluate(self, unit_type, measures, segment_by, where, joins, stats,
+                  covariates, context, stats_registry, **opts):
         """
         MeasureProviders must in their _evaluate function (in logical order):
 
@@ -475,8 +474,8 @@ class MutableMeasureProvider(MeasureProvider):
 
     @_prepare_evaluation_args
     def get_ir(self, unit_type, measures=None, segment_by=None, where=None,
-               joins=None, stats_registry=None, stats=True, covariates=False,
-               context=None, **opts):
+               joins=None, stats=True, covariates=False, context=None,
+               stats_registry=None, **opts):
         # Get intermediate representation for this evaluation query
         if not all(isinstance(j, Join) and j.compatible for j in joins):
             raise RuntimeError("All joins for IR must be compatible with this provider.")
@@ -493,9 +492,8 @@ class MutableMeasureProvider(MeasureProvider):
             **opts
         )
 
-    def _get_ir(self, unit_type, measures=None, segment_by=None, where=None,
-                joins=None, stats_registry=None, stats=True, covariates=False,
-                context=None, **opts):
+    def _get_ir(self, unit_type, measures, segment_by, where, joins, stats,
+                covariates, context, stats_registry, **opts):
         raise NotImplementedError
 
     # Constraint interpretation

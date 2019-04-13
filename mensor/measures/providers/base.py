@@ -1,18 +1,19 @@
 """Base implementation of `MeasureProvider`."""
+import logging
 import os
 import uuid
 from abc import abstractmethod, abstractproperty
 
 import six
 import yaml
+from interface_meta import InterfaceMeta
 
 from mensor.utils import SequenceMap
-from mensor.utils.registry import SubclassRegisteringABCMeta
 
 from ..structures.feature_spec import FeatureSpec
 
 
-class MeasureProvider(metaclass=SubclassRegisteringABCMeta):
+class MeasureProvider(metaclass=InterfaceMeta):
     """
     The primitive abstract class that is the parent of all measure providers.
 
@@ -24,7 +25,27 @@ class MeasureProvider(metaclass=SubclassRegisteringABCMeta):
     at runtime.
     """
 
+    INTERFACE_EXPLICIT_OVERRIDES = False
+
     REGISTRY_KEYS = None
+
+    @classmethod
+    def __register_implementation__(cls):
+        if not hasattr(cls, '_registry'):
+            cls._registry = {}
+
+        registry_keys = getattr(cls, 'REGISTRY_KEYS', [])
+        if registry_keys:
+            for key in registry_keys:
+                if key in cls._registry and cls.__name__ != cls._registry[key].__name__:
+                    logging.info("Ignoring attempt by class `{}` to register key '{}', which is already registered for class `{}`.".format(cls.__name__, key, cls._registry[key].__name__))
+                else:
+                    cls._registry[key] = cls
+                    cls._on_registered(key)
+
+    @classmethod
+    def _on_registered(cls, key):
+        pass
 
     @classmethod
     def from_yaml(cls, yml):
@@ -185,14 +206,14 @@ class MeasureProvider(metaclass=SubclassRegisteringABCMeta):
 
     @abstractmethod
     def evaluate(self, unit_type, measures=None, segment_by=None, where=None,
-                 joins=None, stats_registry=None, stats=True, covariates=False,
-                 context=None, **opts):
+                 joins=None, stats=True, covariates=False, context=None,
+                 stats_registry=None, **opts):
         pass
 
     @abstractmethod
     def get_ir(self, unit_type, measures=None, segment_by=None, where=None,
-               joins=None, stats_registry=None, stats=True, covariates=False,
-               context=None, **opts):
+               joins=None, stats=True, covariates=False, context=None,
+               stats_registry=None, **opts):
         pass
 
     # MeasureProvider compatibility

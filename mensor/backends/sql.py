@@ -243,7 +243,8 @@ class SQLMeasureProvider(MutableMeasureProvider):
             }
         )
 
-    def _evaluate(self, unit_type, measures, segment_by, where, joins, stats_registry, stats, covariates, context, **opts):
+    def _evaluate(self, unit_type, measures, segment_by, where, joins, stats,
+                  covariates, context, stats_registry, **opts):
         df = self.executor.query(self.get_sql(
             unit_type,
             measures=measures,
@@ -262,7 +263,8 @@ class SQLMeasureProvider(MutableMeasureProvider):
     def get_sql(self, *args, **kwargs):
         return self.get_ir(*args, **kwargs)
 
-    def _get_ir(self, unit_type, measures, segment_by, where, joins, stats_registry, stats, covariates, context, **opts):
+    def _get_ir(self, unit_type, measures, segment_by, where, joins, stats,
+                covariates, context, stats_registry, **opts):
         field_map = self._field_map(unit_type, measures, segment_by, where, joins)
         rebase_agg = not unit_type.is_unique
         sql = self._template_environment.get_template(self.dialect.TEMPLATE_BASE).render(

@@ -390,14 +390,16 @@ class MetaMeasureProvider(MeasureProvider):
         return provisions
 
     def evaluate(self, unit_type, measures=None, segment_by=None, where=None,
-                 stats=True, covariates=False, context=None, **opts):
+                 joins=None, stats=True, covariates=False, context=None,
+                 stats_registry=None, **opts):
         strategy = self.get_strategy(
             unit_type, measures=measures, segment_by=segment_by, where=where, context=context
         )
         return strategy.execute(stats=stats, covariates=covariates, context=context, **opts)
 
     def get_ir(self, unit_type, measures=None, segment_by=None, where=None,
-               stats=True, covariates=False, context=None, **opts):
+               joins=None, stats=True, covariates=False, context=None,
+               stats_registry=None, **opts):
         strategy = self.get_strategy(
             unit_type, measures=measures, segment_by=segment_by, where=where, context=context
         )
@@ -405,6 +407,8 @@ class MetaMeasureProvider(MeasureProvider):
 
     def get_strategy(self, unit_type, measures=None, segment_by=None, where=None, context=None):
         # TODO: incorporate context into strategy evaluation
+        # TODO: Add support for joins to meta measure provider
+        # TODO: Add support for stats_registry
         return EvaluationStrategy.from_spec(
             self, unit_type, measures=measures, segment_by=segment_by, where=where
         )

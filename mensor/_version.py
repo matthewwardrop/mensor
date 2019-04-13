@@ -5,10 +5,11 @@ __author__ = 'Matthew Wardrop'
 __author_email__ = 'mpwardrop@gmail.com'
 
 __dependencies__ = [
+    'interface_meta',
+    'numpy',
     'pandas',
     'pyyaml',
-    'uncertainties',
+    'scipy',
     'six',
-    'numpy',
-    'scipy'
+    'uncertainties',
 ]
