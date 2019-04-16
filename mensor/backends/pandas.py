@@ -1,8 +1,10 @@
 import functools
 import logging
+import itertools
 
 import pandas as pd
 
+from mensor.utils import SequenceMap
 from mensor.constraints import CONSTRAINTS
 from mensor.measures import MutableMeasureProvider
 from mensor.measures.registries import global_stats_registry
@@ -53,13 +55,21 @@ class PandasMeasureProvider(MutableMeasureProvider):
             .assign(count=1)
         )
 
+        where_dims = SequenceMap([
+            self.dimensions[dim] for dim in where.dimensions if dim not in segment_by
+        ])
         df = (
             pd.DataFrame()
             .assign(**{
-                dimension.fieldname(role='dimension', unit_type=unit_type if not rebase_agg else None): raw_data.eval(dimension.expr) for dimension in segment_by
+                dimension.fieldname(
+                    role='dimension', unit_type=unit_type if not rebase_agg else None
+                ): raw_data.eval(dimension.expr)
+                for dimension in itertools.chain(segment_by, where_dims)
             })
             .assign(**{
-                measure.fieldname(role='measure', unit_type=unit_type if not rebase_agg else None): raw_data.eval(measure.expr) for measure in measures
+                measure.fieldname(
+                    role='measure', unit_type=unit_type if not rebase_agg else None
+                ): raw_data.eval(measure.expr) for measure in measures
             })
         )
 
