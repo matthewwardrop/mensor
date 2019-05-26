@@ -6,10 +6,10 @@ from collections import Counter, namedtuple
 from mensor.utils import nested_dict_copy, SequenceMap
 
 from .base import MeasureProvider
-from ..evaluation.strategy import EvaluationStrategy
 from ..registries import global_stats_registry, StatsRegistry
 from ..structures.features import Feature
 from ..structures.meta import ResolvedFeatureCandidates
+from ..structures.strategy import EvaluationStrategy
 from ..structures.resolved import ResolvedFeature
 
 __all__ = ['MetaMeasureProvider']
