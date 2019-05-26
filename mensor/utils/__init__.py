@@ -222,3 +222,14 @@ def with_opts_processed(f):
         return f(self, *args, **base_args, **opts)
 
     return wrapped
+
+
+def startseq_match(A, B):
+    '''
+    Checks whether sequence a starts sequence b.
+    For example: startseq_match([1,2], [1,2,3]) == True.
+    '''
+    for i, a in enumerate(A):
+        if i == len(B) or a != B[i]:
+            return False
+    return True

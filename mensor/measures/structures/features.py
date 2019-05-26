@@ -64,9 +64,9 @@ class Feature:
     def __repr__(self):
         return f"{self.__class__.__name__}<{self.name}>"
 
-    def resolve(self):
+    def resolve(self, **props):
         from .resolved import ResolvedFeature
-        return ResolvedFeature(self)
+        return ResolvedFeature(self, **props)
 
 
 class Identifier(Feature):
@@ -138,9 +138,9 @@ class Identifier(Feature):
 
         if isinstance(unit_type, Identifier):
             unit_type = unit_type.name
-        # elif isinstance(unit_type, ResolvedFeature):  TODO: Fix this
-        #     assert unit_type.kind in ('identifier', 'foreign_key', 'reverse_foreign_key'), "{} (of type {}) is not a valid unit type.".format(unit_type, type(unit_type))
-        #     unit_type = unit_type.name
+        elif isinstance(unit_type, ResolvedFeature):  # TODO: Fix this
+            # assert unit_type.kind in ('identifier', 'foreign_key', 'reverse_foreign_key'), "{} (of type {}) is not a valid unit type.".format(unit_type, type(unit_type))
+            unit_type = unit_type.name
         if reverse:
             return startseq_match(unit_type.split(':'), self.name.split(':'))
         return startseq_match(self.name.split(':'), unit_type.split(':'))

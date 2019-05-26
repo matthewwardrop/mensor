@@ -8,9 +8,11 @@ import six
 import yaml
 from interface_meta import InterfaceMeta
 
-from mensor.utils import SequenceMap
+from mensor.utils import SequenceMap, startseq_match
 
 from ..structures.feature_spec import FeatureSpec
+from ..structures.features import Feature
+from ..structures.resolved import ResolvedFeature
 
 
 class MeasureProvider(metaclass=InterfaceMeta):
@@ -141,7 +143,7 @@ class MeasureProvider(metaclass=InterfaceMeta):
     # TODO: Upgrade from MutableMeasureProvider?
 
     # Resolution
-    def resolve(self, unit_type, features, role=None, with_attrs=None):
+    def resolve(self, unit_type, features, role=None, with_props=None):
         """
         This method resolves one or more features optionally associated with a
         unit_type and a role. Note that this method is concerned about
@@ -153,12 +155,12 @@ class MeasureProvider(metaclass=InterfaceMeta):
             unit_type (str, None): A unit type for which the resolution should
                 be done.
             role (str, None): One of 'measure', 'dimension', 'identifier' or `None`.
-            with_attrs (dict, None): Attributes to set on the returned feature.
+            with_props (dict, None): Attributes to set on the returned feature.
                 Note that these are *additive* to any attributes already inherited
                 from feature_type (which are otherwise preserved).
 
         Returns:
-            _Dimension, _Measure, _StatisticalUnitIdentifier: The resolved object.
+            ResolvedFeature: The resolved object.
         """
         return_one = False
 
@@ -170,15 +172,15 @@ class MeasureProvider(metaclass=InterfaceMeta):
         resolved = SequenceMap()
         for feature in features:
             try:
-                attrs = with_attrs.copy() if with_attrs else {}
+                props = with_props or {}
                 if isinstance(feature, tuple):
                     feature = FeatureSpec(feature[0], **feature[1])
                 if isinstance(feature, dict):
                     feature = FeatureSpec(**feature)
                 if isinstance(feature, FeatureSpec):
-                    feature, extra_attrs = feature.as_source_with_attrs(unit_type)
-                    attrs.update(extra_attrs)
-                r = self._resolve(unit_type=unit_type, feature=feature, role=role)._with_attrs(**attrs)
+                    feature, extra_props = feature.as_source_with_props(unit_type)
+                    props.update(extra_props)
+                r = self._resolve(unit_type=unit_type, feature=feature, role=role, with_props=props)
                 resolved[r] = r
             except ValueError:
                 unresolvable.append(feature)
@@ -189,9 +191,28 @@ class MeasureProvider(metaclass=InterfaceMeta):
             return resolved.first
         return resolved
 
-    def _resolve(self, unit_type, feature, role=None):
-        if not isinstance(feature, six.string_types):
+    def _resolve(self, unit_type, feature, role=None, with_props=None):
+        if isinstance(feature, ResolvedFeature):
+            if with_props:
+                feature = feature.with_props(**with_props)
             return feature
+        assert isinstance(feature, six.string_types), f"Invalid feature to resolve '{feature}'."
+
+        # Resolve hierarchical identifiers
+        # TODO: Neaten? Move behaviour to a staticmethod of Identifier?
+        if isinstance(unit_type, ResolvedFeature):
+            unit_type = unit_type.mask
+        elif isinstance(unit_type, Feature):
+            unit_type = unit_type.name
+
+        if startseq_match(unit_type.split(':'), feature.split(':')):
+            return self.identifier_for_unit(unit_type).resolve(mask=feature)
+        elif startseq_match(feature.split(':'), unit_type.split(':')):
+            raise ValueError(f"Attempting to resolve a parent unit_type ({feature}) via a child ({unit_type}).")
+
+        return self._find_feature(unit_type, feature, role=role).resolve(**{'mask': feature, **(with_props or {})})
+
+    def _find_feature(self, unit_type, feature, role=None):
         if role in (None, 'identifier', 'dimension', 'foreign_key'):
             if feature in self.foreign_keys_for_unit(unit_type):
                 return self.foreign_keys_for_unit(unit_type)[feature]
@@ -272,7 +293,7 @@ class MeasureProvider(metaclass=InterfaceMeta):
                     if feature != unit_type:
                         out.append(
                             "        - {}{}".format(
-                                feature.mask,
+                                feature.name,
                                 " [{}]".format(feature.desc) if feature.desc else ""
                             )
                         )

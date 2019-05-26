@@ -6,7 +6,8 @@ from mensor.utils import SequenceMap
 from .base import MeasureProvider
 from ..evaluation.output import EvaluatedMeasures
 from ..registries import global_stats_registry
-from ..structures.features import _Dimension, _Measure, _ProvidedFeature, _StatisticalUnitIdentifier
+from ..structures.features import Dimension, Measure, Feature, Identifier
+from ..structures.resolved import ResolvedFeature
 from ..structures.join import Join
 
 
@@ -80,10 +81,10 @@ class MutableMeasureProvider(MeasureProvider):
 
     @identifiers.setter
     def identifiers(self, identifiers):
-        self._identifiers = self._get_dimensions_from_specs(_StatisticalUnitIdentifier, identifiers)
+        self._identifiers = self._get_dimensions_from_specs(Identifier, identifiers)
 
     def add_identifier(self, unit_type, expr=None, desc=None, role='foreign'):
-        identifier = _StatisticalUnitIdentifier(unit_type, expr=expr, desc=desc, role=role, provider=self)
+        identifier = Identifier(unit_type, expr=expr, desc=desc, role=role, provider=self)
         self._identifiers.append(identifier)
         return self
 
@@ -98,15 +99,18 @@ class MutableMeasureProvider(MeasureProvider):
             if unit_type[1:] != self.name:
                 raise ValueError("No provider of name '{}' (this provider is named '{}').".format(unit_type[1:], self.name))
             return None
-        if isinstance(unit_type, _StatisticalUnitIdentifier):
+        if isinstance(unit_type, ResolvedFeature):
+            unit_type = unit_type.feature
+        if isinstance(unit_type, Feature):
+            assert isinstance(unit_type, Identifier), "Provided feature is not an identifier."
             if unit_type.provider is self:
                 return unit_type
-            unit_type = unit_type.mask
+            unit_type = unit_type.name
         if unit_type in self.identifiers:
             return self.identifiers[unit_type]
         for identifier in sorted(self.identifiers, key=lambda x: len(x.name), reverse=True):
             if identifier.matches(unit_type):
-                return identifier.with_mask(unit_type if isinstance(unit_type, str) else unit_type.name)
+                return identifier
         raise ValueError("No such identifier: '{}'.".format(unit_type))
 
     def foreign_keys_for_unit(self, unit_type):
@@ -117,8 +121,8 @@ class MutableMeasureProvider(MeasureProvider):
         foreign_keys = SequenceMap()
         for foreign_key in self.identifiers:
             if self._unit_has_foreign_key(unit_type, foreign_key):
-                if unit_type.name == foreign_key:
-                    foreign_key = foreign_key.with_mask(unit_type.mask)
+                if unit_type.name == foreign_key and isinstance(unit_type, ResolvedFeature):
+                    foreign_key = foreign_key.resolve(mask=unit_type.mask)
                 foreign_keys.append(foreign_key)
         return foreign_keys
 
@@ -136,17 +140,17 @@ class MutableMeasureProvider(MeasureProvider):
 
     @dimensions.setter
     def dimensions(self, dimensions):
-        self._dimensions = self._get_dimensions_from_specs(_Dimension, dimensions)
+        self._dimensions = self._get_dimensions_from_specs(Dimension, dimensions)
 
     def add_dimension(self, name=None, desc=None, expr=None, default=None, shared=False, requires_constraint=False):
-        dimension = _Dimension(name, desc=desc, expr=expr, default=default, shared=shared, requires_constraint=requires_constraint, provider=self)
+        dimension = Dimension(name, desc=desc, expr=expr, default=default, shared=shared, requires_constraint=requires_constraint, provider=self)
         self._dimensions.append(dimension)
         return self
 
     def dimensions_for_unit(self, unit_type, include_partitions=True):
         unit_type = self.identifier_for_unit(unit_type)
         if unit_type is None:
-            return self.dimensions
+            return SequenceMap(d for d in self.dimensions)
 
         dimensions = SequenceMap()
         for dimension in self.dimensions:
@@ -169,7 +173,7 @@ class MutableMeasureProvider(MeasureProvider):
     # functionally equivalent in most cases.
     # (partitions behave differently in joins TODO: document this difference)
     def add_partition(self, name=None, desc=None, expr=None, requires_constraint=False):
-        dimension = _Dimension(name, desc=desc, expr=expr, shared=True, partition=True, requires_constraint=requires_constraint, provider=self)
+        dimension = Dimension(name, desc=desc, expr=expr, shared=True, partition=True, requires_constraint=requires_constraint, provider=self)
         self._dimensions.append(dimension)
         return self
 
@@ -186,17 +190,17 @@ class MutableMeasureProvider(MeasureProvider):
 
     @measures.setter
     def measures(self, measures):
-        self._measures = self._get_dimensions_from_specs(_Measure, measures)
+        self._measures = self._get_dimensions_from_specs(Measure, measures)
 
     def add_measure(self, name=None, expr=None, default=None, desc=None, shared=False, distribution='normal'):
-        measure = _Measure(name, expr=expr, default=default, desc=desc, shared=shared, distribution=distribution, provider=self)
+        measure = Measure(name, expr=expr, default=default, desc=desc, shared=shared, distribution=distribution, provider=self)
         self._measures.append(measure)
         return self
 
     def measures_for_unit(self, unit_type):
         unit_type = self.identifier_for_unit(unit_type)
         if unit_type is None:
-            return self.measures
+            return SequenceMap(m for m in self.measures)
 
         measures = SequenceMap()
         for measure in self.measures:
@@ -241,10 +245,10 @@ class MutableMeasureProvider(MeasureProvider):
     def _prepare_evaluation_args(f):
         def wrapped(self, unit_type, measures=None, segment_by=None, where=None, joins=None, stats=True, covariates=False, context=None, stats_registry=None, **opts):
             unit_type = self.identifier_for_unit(unit_type)
-            if isinstance(measures, (str, _ProvidedFeature)):
+            if isinstance(measures, (str, Feature)):
                 measures = [measures]
             measures = SequenceMap() if measures is None else self.resolve(unit_type=unit_type, features=measures, role='measure')
-            if isinstance(segment_by, (str, _ProvidedFeature)):
+            if isinstance(segment_by, (str, Feature)):
                 segment_by = [segment_by]
             segment_by = SequenceMap() if segment_by is None else self.resolve(unit_type=unit_type, features=segment_by, role='dimension')
             where = Constraint.from_spec(where)
@@ -267,9 +271,9 @@ class MutableMeasureProvider(MeasureProvider):
         `unit_type` objects as indivisible.
 
         Args:
-            unit_type (str, _StatisticalUnitIdentifier): The unit to treat as
+            unit_type (str, Identifier): The unit to treat as
                 indivisible in this analysis.
-            measures (list<str, _Measure>): The measures to be calculated.
+            measures (list<str, Measure>): The measures to be calculated.
             segment_by (list<str, _Feature>): The dimensions by which to segment
                 the measure computations.
             where (dict, list, tuple, BaseConstraint): The
@@ -346,7 +350,7 @@ class MutableMeasureProvider(MeasureProvider):
                     )
 
             # Check columns in resulting dataframe
-            expected_columns = _Measure.get_all_fields(measures_post, unit_type=unit_type, rebase_agg=True, stats_registry=stats_registry, stats=False) + [f.via_name for f in segment_by_post]
+            expected_columns = Measure.get_all_fields(measures_post, unit_type=unit_type, rebase_agg=True, stats_registry=stats_registry, stats=False) + [f.via_name for f in segment_by_post]
             excess_columns = set(result.columns).difference(expected_columns)
             missing_columns = set(expected_columns).difference(result.columns)
             if len(excess_columns):  # remove any unnecessary columns (such as now used join keys)

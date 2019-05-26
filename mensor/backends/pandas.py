@@ -6,7 +6,7 @@ import pandas as pd
 from mensor.constraints import CONSTRAINTS
 from mensor.measures import MutableMeasureProvider
 from mensor.measures.registries import global_stats_registry
-from mensor.measures.structures.features import _Measure
+from mensor.measures.structures.features import Measure
 
 
 class PandasMeasureProvider(MutableMeasureProvider):
@@ -129,7 +129,7 @@ class PandasMeasureProvider(MutableMeasureProvider):
     def _dataframe_agg(cls, df, unit_type, measures, segment_by, rebase_agg=False,
                        stats_registry=None, stats=False, reagg=False):
 
-        measure_cols = _Measure.get_all_fields(measures, unit_type=unit_type, rebase_agg=rebase_agg, stats=stats, stats_registry=stats_registry)
+        measure_cols = Measure.get_all_fields(measures, unit_type=unit_type, rebase_agg=rebase_agg, stats=stats, stats_registry=stats_registry)
         segment_by_cols = [s.fieldname(role='dimension', unit_type=unit_type if not rebase_agg else None) for s in segment_by]
 
         if len(df) == 0:
