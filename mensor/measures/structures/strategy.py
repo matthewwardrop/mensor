@@ -6,7 +6,6 @@ from mensor.constraints import And, Constraint
 from mensor.utils import SequenceMap
 
 from ..structures.features import Identifier
-from ..structures.join import Join
 
 FeatureBundle = namedtuple('FeatureBundle', ['unit_type', 'dimensions', 'measures'])
 
@@ -16,6 +15,35 @@ class EvaluationStrategy(object):
     class Type(Enum):
         REGULAR = 1
         UNIT_REBASE = 2
+
+    class Join(object):
+
+        # TODO: Review Join API (esp. which arguments are essential, etc)
+
+        def __init__(self, provider, unit_type, left_on, right_on, object,
+                     compatible=False, join_prefix=None, name=None, measures=None, dimensions=None,
+                     how='left'):
+            self.provider = provider
+            self.unit_type = unit_type
+            self.join_prefix = join_prefix
+            self.left_on = left_on
+            self.right_on = right_on
+            self.name = name
+            self.measures = measures
+            self.dimensions = dimensions
+            self.object = object
+            self.compatible = compatible
+            self.how = how
+
+        @property
+        def name(self):
+            return self._name
+
+        @name.setter
+        def name(self, name):
+            if name is None:
+                name = "join_{}_{}".format(self.provider.name, self.unit_type.name)
+            self._name = name
 
     @classmethod
     def from_spec(cls, registry, unit_type, measures=None, segment_by=None, where=None, **opts):
@@ -342,7 +370,7 @@ class EvaluationStrategy(object):
         # Step 2: Evaluate provider
         if as_join and compatible:
             try:
-                return Join(
+                return EvaluationStrategy.Join(
                     provider=self.provider,
                     unit_type=self.unit_type,
                     join_prefix=self.join_prefix,
@@ -396,7 +424,7 @@ class EvaluationStrategy(object):
                 else:
                     right_on = self.join_on_right
 
-                return Join(
+                return EvaluationStrategy.Join(
                     provider=self.provider,
                     unit_type=self.unit_type,
                     join_prefix=self.join_prefix,
