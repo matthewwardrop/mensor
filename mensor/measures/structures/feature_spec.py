@@ -37,7 +37,7 @@ class FeatureSpec:
         attrs['transforms'][unit_type]['alias'] = self._alias
         return attrs
 
-    def as_source_with_attrs(self, unit_type):
+    def as_source_with_props(self, unit_type):
         return self._source, self.get_attrs(unit_type)
 
     @property
