@@ -46,7 +46,7 @@ dependencies = [
 ]
 
 [project.urls]
-Documentation = "http://mensor.readthedocs.io"
+Documentation = "https://matthewwardrop.github.io/mensor/"
 Homepage = "https://github.com/matthewwardrop/mensor"
 "Issue Tracker" = "https://github.com/matthewwardrop/mensor/issues"
 Source = "https://github.com/matthewwardrop/mensor"

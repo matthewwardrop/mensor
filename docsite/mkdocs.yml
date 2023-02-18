@@ -1,6 +1,13 @@
 site_name: Mensor
 nav:
-  - Placeholder: index.md
+  - Overview:
+    - Introduction: index.md
+    - Installation: installation.md
+    - Contributions: contributions.md
+  - User Guides:
+    - Introduction: guides/index.md
+    - Concepts: guides/concepts.md
+    - Quickstart: guides/quickstart.md
 theme:
   name: material
   font:
