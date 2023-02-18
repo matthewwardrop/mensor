@@ -6,9 +6,11 @@ from collections import Counter, namedtuple
 from mensor.utils import nested_dict_copy, SequenceMap
 
 from .base import MeasureProvider
-from ..evaluation.strategy import EvaluationStrategy
 from ..registries import global_stats_registry, StatsRegistry
-from ..structures.features import _ProvidedFeature, _ResolvedFeature
+from ..structures.features import Feature
+from ..structures.meta import ResolvedFeatureCandidates
+from ..structures.strategy import EvaluationStrategy
+from ..structures.resolved import ResolvedFeature
 
 __all__ = ['MetaMeasureProvider']
 
@@ -91,21 +93,23 @@ class MetaMeasureProvider(MeasureProvider):
                     self.register_measure(identifier, measure)
 
         def _handled_resolved_features(f):
+            # TODO: from_provider is no longer used on ResolvedFeature. Do we
+            # mean ResolvedFeatureCandidates
             def wrapped(self, unit_type, *args):
                 assert len(args) in (0, 1)
 
                 if args:
-                    if isinstance(unit_type, _ResolvedFeature):
+                    if isinstance(unit_type, ResolvedFeature):
                         unit_type = unit_type.from_provider(list(unit_type._providers.values())[0])
 
-                    if isinstance(args[0], _ResolvedFeature):
+                    if isinstance(args[0], ResolvedFeature):
                         for provider in args[0]._providers:
                             f(self, unit_type, args[0].from_provider(provider))
                     else:
                         f(self, unit_type, args[0])
 
                 else:
-                    if isinstance(unit_type, _ResolvedFeature):
+                    if isinstance(unit_type, ResolvedFeature):
                         for provider in unit_type._providers:
                             f(self, unit_type.from_provider(provider))
                     else:
@@ -114,7 +118,7 @@ class MetaMeasureProvider(MeasureProvider):
 
         @_handled_resolved_features
         def register_identifier(self, unit_type):
-            if isinstance(unit_type, _ResolvedFeature):
+            if isinstance(unit_type, ResolvedFeature):
                 for provider in unit_type._providers:
                     provided = unit_type.from_provider(provider)
                     self._append(self.identifiers, [provided], provided)
@@ -240,10 +244,8 @@ class MetaMeasureProvider(MeasureProvider):
 
     # MeasureEvaluator methods
     def identifier_for_unit(self, unit_type):
-        return _ResolvedFeature(
-            name=unit_type if isinstance(unit_type, str) else unit_type.name,
-            providers=[d.provider for d in self._cache.identifiers[unit_type]],
-            kind='identifier'
+        return ResolvedFeatureCandidates(
+            features=self._cache.identifiers[unit_type]
         )
 
     def _features_lookup(self, unit_type, kind, attr_filter=None):
@@ -261,7 +263,7 @@ class MetaMeasureProvider(MeasureProvider):
                         if kind in ('foreign_key', 'reverse_foreign_key') and avail_unit_type == feature.name:
                             mask = unit_type.name
                         features.append(
-                            _ResolvedFeature(feature.name, providers=[d.provider for d in instances], unit_type=unit_type, mask=mask, kind=kind)
+                            ResolvedFeatureCandidates(instances, unit_type=unit_type, mask=mask)
                         )
         return features
 
@@ -286,15 +288,14 @@ class MetaMeasureProvider(MeasureProvider):
     def measures_for_unit(self, unit_type):
         return self._features_lookup(unit_type, 'measure')
 
-    def _resolve(self, unit_type, feature, role=None):
+    def _resolve(self, unit_type, feature, role=None, with_props=None):
         unit_type = self.identifier_for_unit(unit_type)
         via = ''
-        attrs = {}
+        props = with_props or {}
         eff_unit_type = unit_type
 
-        if isinstance(feature, (_ResolvedFeature, _ProvidedFeature)):
-            attrs = feature.attrs
-            del attrs['name']
+        if isinstance(feature, (ResolvedFeature, Feature)):
+            props = feature.props.copy()
             feature = feature.via_name  # Re-resolve any resolved feature, since resolved features are currently not deeply resolved
 
         if isinstance(feature, str):
@@ -307,9 +308,9 @@ class MetaMeasureProvider(MeasureProvider):
             if via_suffix:
                 eff_unit_type = self.identifier_for_unit(s[-2])
                 via += ('/' + via_suffix) if via else via_suffix
-            attrs['unit_type'] = unit_type
+            props['unit_type'] = unit_type
 
-        return MeasureProvider._resolve(self, eff_unit_type, feature, role=role)._with_attrs(**attrs).as_via(via)
+        return MeasureProvider._resolve(self, eff_unit_type, feature, role=role, with_props=props).as_via(via)
 
     def _find_primary_key_for_unit_type(self, unit_type):
         for identifier in sorted(self._cache.identifiers, key=lambda x: len(x.name), reverse=True):
@@ -319,18 +320,18 @@ class MetaMeasureProvider(MeasureProvider):
 
     def _find_optimal_provision(self, unit_type, measures, dimensions, require_primary=True):
         """
-        This method takes a set of meaures and dimensions for a given unit_type,
+        This method takes a set of measures and dimensions for a given unit_type,
         and generates a somewhat optimised sequence of `Provision` instances,
         which indicate the MeasureProvider instance from which measures and
         dimensions should be extracted. This is primarily useful for the
         generation of an `EvaluationStrategy`.
 
         Args:
-            unit_type (str, _StatisticalUnitIdentifier): The statistical unit
+            unit_type (str, Identifier): The statistical unit
                 type for which indicated measures and dimensions should be
                 extracted.
-            measures (list<str,_Measure>): A set of measures to be extracted.
-            dimensions (list<str, _Dimension): A set of dimensions to be
+            measures (list<str,Measure>): A set of measures to be extracted.
+            dimensions (list<str, Dimension): A set of dimensions to be
                 extracted.
             require_primary (bool): Whether to require the first `Provision` to
                 be from a `MeasureProvider` with `unit_type` as a primary
@@ -350,8 +351,8 @@ class MetaMeasureProvider(MeasureProvider):
 
         def get_next_provider(unit_type, measures, dimensions, primary=False):
             provider_count = Counter()
-            provider_count.update(provider for measure in measures.values() for provider in measure.providers.values())
-            provider_count.update(provider for dimension in dimensions.values() for provider in dimension.providers.values())
+            provider_count.update(provider for measure in measures.values() for provider in measure.providers)
+            provider_count.update(provider for dimension in dimensions.values() for provider in dimension.providers)
 
             provider = None
             if primary:
@@ -373,15 +374,18 @@ class MetaMeasureProvider(MeasureProvider):
         provisions = []
         dimension_count = len(measures) + len(dimensions)
 
+        # TODO: remove this hack
+        unit_type = unit_type.name
+
         while dimension_count > 0:
             p = get_next_provider(unit_type, measures, dimensions, primary=True if require_primary and len(provisions) == 0 else False)
-            join_prefix = unit_type.name
+            join_prefix = unit_type#.name
 
             provisions.append(Provision(
                 p,
                 join_prefix,
-                measures=[measures.pop(measure).from_provider(p) for measure in measures.copy() if measure in p.measures_for_unit(unit_type)],
-                dimensions=[dimensions.pop(dimension).from_provider(p) for dimension in dimensions.copy() if dimension in p.dimensions_for_unit(unit_type) or dimension in p.foreign_keys_for_unit(unit_type) or dimension in p.measures_for_unit(unit_type)]  # TODO: Use p.resolve?
+                measures=[measures.pop(measure).for_provider(p) for measure in measures.copy() if measure in p.measures_for_unit(unit_type)],
+                dimensions=[dimensions.pop(dimension).for_provider(p) for dimension in dimensions.copy() if dimension in p.dimensions_for_unit(unit_type) or dimension in p.foreign_keys_for_unit(unit_type) or dimension in p.measures_for_unit(unit_type)]  # TODO: Use p.resolve?
             ))
             if len(measures) + len(dimensions) == dimension_count and not (require_primary is True and len(provisions) == 1):
                 raise RuntimeError("Could not provide provisions for: measures={}, dimensions={}. This is a bug.".format(list(measures), list(dimensions)))

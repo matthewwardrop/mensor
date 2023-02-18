@@ -5,8 +5,7 @@ from enum import Enum
 from mensor.constraints import And, Constraint
 from mensor.utils import SequenceMap
 
-from ..structures.features import _StatisticalUnitIdentifier
-from ..structures.join import Join
+from ..structures.features import Identifier
 
 FeatureBundle = namedtuple('FeatureBundle', ['unit_type', 'dimensions', 'measures'])
 
@@ -16,6 +15,35 @@ class EvaluationStrategy(object):
     class Type(Enum):
         REGULAR = 1
         UNIT_REBASE = 2
+
+    class Join(object):
+
+        # TODO: Review Join API (esp. which arguments are essential, etc)
+
+        def __init__(self, provider, unit_type, left_on, right_on, object,
+                     compatible=False, join_prefix=None, name=None, measures=None, dimensions=None,
+                     how='left'):
+            self.provider = provider
+            self.unit_type = unit_type
+            self.join_prefix = join_prefix
+            self.left_on = left_on
+            self.right_on = right_on
+            self.name = name
+            self.measures = measures
+            self.dimensions = dimensions
+            self.object = object
+            self.compatible = compatible
+            self.how = how
+
+        @property
+        def name(self):
+            return self._name
+
+        @name.setter
+        def name(self, name):
+            if name is None:
+                name = "join_{}_{}".format(self.provider.name, self.unit_type.name)
+            self._name = name
 
     @classmethod
     def from_spec(cls, registry, unit_type, measures=None, segment_by=None, where=None, **opts):
@@ -100,7 +128,7 @@ class EvaluationStrategy(object):
                 cls(
                     registry=registry,
                     provider=provision.provider,
-                    unit_type=unit_type,
+                    unit_type=provision.provider.identifier_for_unit(unit_type.name),
                     measures=provision.measures,
                     segment_by=provision.dimensions + generic_constraint_dimensions,
                     where=generic_constraints,
@@ -117,12 +145,13 @@ class EvaluationStrategy(object):
 
             if foreign_key != dim_bundle.unit_type:  # Reverse foreign key join
                 foreign_key = dim_bundle.unit_type
-                foreign_strategy.unit_type = dim_bundle.unit_type
+                foreign_strategy.unit_type = foreign_strategy.provider.identifier_for_unit(dim_bundle.unit_type.name)
 
             added = False
             for sub_strategy in evaluations:
                 for dimension in sub_strategy.segment_by:
-                    if isinstance(dimension, _StatisticalUnitIdentifier) and dimension.matches(foreign_key):
+                    # TODO: consider using enum type on ResolvedFeature?
+                    if isinstance(dimension.feature, Identifier) and dimension.matches(foreign_key.name):
                         sub_strategy.add_join(foreign_key, foreign_strategy)
                         added = True
                         break
@@ -244,8 +273,8 @@ class EvaluationStrategy(object):
         assert isinstance(strategy, EvaluationStrategy)
 
         # Add primary join key if missing and set join
-        self_unit_type = self.provider.identifier_for_unit(unit_type.name).with_mask(unit_type.name)
-        join_unit_type = strategy.provider.identifier_for_unit(unit_type.name)
+        self_unit_type = self.provider.identifier_for_unit(unit_type.name).resolve(mask=unit_type.name)
+        join_unit_type = strategy.provider.identifier_for_unit(unit_type.name).resolve()
         if self_unit_type not in self.segment_by:
             self.segment_by.prepend(self_unit_type.as_private)
         if join_unit_type not in strategy.segment_by:
@@ -341,7 +370,7 @@ class EvaluationStrategy(object):
         # Step 2: Evaluate provider
         if as_join and compatible:
             try:
-                return Join(
+                return EvaluationStrategy.Join(
                     provider=self.provider,
                     unit_type=self.unit_type,
                     join_prefix=self.join_prefix,
@@ -395,7 +424,7 @@ class EvaluationStrategy(object):
                 else:
                     right_on = self.join_on_right
 
-                return Join(
+                return EvaluationStrategy.Join(
                     provider=self.provider,
                     unit_type=self.unit_type,
                     join_prefix=self.join_prefix,
