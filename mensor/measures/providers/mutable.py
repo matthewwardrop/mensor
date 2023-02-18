@@ -1,6 +1,7 @@
 import itertools
 
 from mensor.constraints import And, Constraint, CONSTRAINTS
+from mensor.measures.structures.strategy import EvaluationStrategy
 from mensor.utils import SequenceMap
 
 from .base import MeasureProvider
@@ -8,7 +9,6 @@ from ..registries import global_stats_registry
 from ..structures.evaluated import EvaluatedMeasures
 from ..structures.features import Dimension, Measure, Feature, Identifier
 from ..structures.resolved import ResolvedFeature
-from ..structures.join import Join
 
 
 __all__ = ["MutableMeasureProvider"]
@@ -678,7 +678,9 @@ class MutableMeasureProvider(MeasureProvider):
         **opts
     ):
         # Get intermediate representation for this evaluation query
-        if not all(isinstance(j, Join) and j.compatible for j in joins):
+        if not all(
+            isinstance(j, EvaluationStrategy.Join) and j.compatible for j in joins
+        ):
             raise RuntimeError(
                 "All joins for IR must be compatible with this provider."
             )

@@ -2,15 +2,15 @@
 [![PyPI Version](https://img.shields.io/pypi/v/mensor.svg)](https://pypi.org/project/mensor/)
 ![Project Status](https://img.shields.io/pypi/status/mensor.svg)
 ![Python Versions](https://img.shields.io/pypi/pyversions/mensor.svg)
-[![Build Status](https://travis-ci.org/airbnb/mensor.svg?branch=master)](https://travis-ci.org/airbnb/mensor)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/matthewwardrop/mensor/tests.yml?branch=main)](https://github.com/matthewwardrop/mensor/actions?query=workflow%3A%22Run+Tests%22)
 [![Documentation Status](https://readthedocs.org/projects/mensor/badge/?version=latest)](http://mensor.readthedocs.io/en/latest/?badge=latest)
-[![License](https://img.shields.io/github/license/airbnb/mensor.svg)](https://github.com/airbnb/mensor/blob/master/LICENSE)
+[![License](https://img.shields.io/github/license/matthewwardrop/mensor.svg)](https://github.com/matthewwardrop/mensor/blob/master/LICENSE)
 
 Mensor is a graph-based computation engine for computing measures and metrics.
 
 - **Documentation:** http://mensor.readthedocs.io
-- **Source:** https://github.com/airbnb/mensor
-- **Bug reports:** https://github.com/airbnb/mensor/issues
+- **Source:** https://github.com/matthewwardrop/mensor
+- **Bug reports:** https://github.com/matthewwardrop/mensor/issues
 
 Among other things, Mensor:
 

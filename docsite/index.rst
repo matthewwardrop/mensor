@@ -15,7 +15,7 @@ Welcome! If this is the first time that you have stumbled across this
 documentation, there is a very good chance you have some questions about this
 project. That's fantastic! Hopefully, these resources will go some way toward
 answering them. If you find it lacking in any way, please do not hesitate to
-file an issue on the `GitHub issue tracker <http://github.com/airbnb/mensor/issues>`_.
+file an issue on the `GitHub issue tracker <http://github.com/matthewwardrop/mensor/issues>`_.
 
 What is Mensor?
 ---------------

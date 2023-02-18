@@ -19,7 +19,7 @@ Quickstart
 If you have not read the :doc:`concepts` documentation, and find any of the
 following unclear, be sure to go and read this documentation. If this resource
 remains unclear, that is no doubt the fault of the author, and you should feel
-free to reach out by creating a `GitHub issue <http://github.com/airbnb/mensor/issues>`_.
+free to reach out by creating a `GitHub issue <http://github.com/matthewwardrop/mensor/issues>`_.
 
 In the following, we will explore the use of Mensor in a toy example backed by
 pandas data frames. All of the code shown on this page can be run equally well

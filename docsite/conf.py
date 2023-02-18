@@ -96,7 +96,7 @@ master_doc = "index"
 
 # General information about the project.
 project = "Mensor"
-copyright = "Airbnb and contributors"
+copyright = "Matthew Wardrop and contributors"
 author = mensor.__author__
 
 # The version info for the project you're documenting, acts as replacement for
