@@ -6,24 +6,28 @@ def get_sum_and_variance(strategy, measure):
     measure = strategy.measures[measure]
     col = strategy.provider._col
 
-    if measure.distribution == 'normal':
-        measure_sum = col('{}|normal|sum'.format(measure.via_name))
-        measure_variance = '(1.0 * {sos} - 1.0 * POW({sum}, 2) / {count})'.format(
-            sum=col('{}|normal|sum'.format(measure.via_name)),
-            sos=col('{}|normal|sos'.format(measure.via_name)),
-            count=col('{}|normal|count'.format(measure.via_name))
+    if measure.distribution == "normal":
+        measure_sum = col("{}|normal|sum".format(measure.via_name))
+        measure_variance = "(1.0 * {sos} - 1.0 * POW({sum}, 2) / {count})".format(
+            sum=col("{}|normal|sum".format(measure.via_name)),
+            sos=col("{}|normal|sos".format(measure.via_name)),
+            count=col("{}|normal|count".format(measure.via_name)),
         )
-    elif measure.distribution == 'binomial':
-        measure_sum = col('{}|binomial|sum'.format(measure.via_name))
-        measure_variance = '(1.0 * {sum} * (1.0 - {sum} / {count}))'.format(
-            sum=col('{}|normal|sum'.format(measure.via_name)),
-            count=col('{}|normal|count'.format(measure.via_name))
+    elif measure.distribution == "binomial":
+        measure_sum = col("{}|binomial|sum".format(measure.via_name))
+        measure_variance = "(1.0 * {sum} * (1.0 - {sum} / {count}))".format(
+            sum=col("{}|normal|sum".format(measure.via_name)),
+            count=col("{}|normal|count".format(measure.via_name)),
         )
     elif measure.distribution is None:
-        measure_sum = col('{}|sum'.format(measure.via_name))
-        measure_variance = '0.0'
+        measure_sum = col("{}|sum".format(measure.via_name))
+        measure_variance = "0.0"
     else:
-        raise RuntimeError("SQL-backed RatioMetrics cannot yet interpret {} distributions.".format(measure.distribution))
+        raise RuntimeError(
+            "SQL-backed RatioMetrics cannot yet interpret {} distributions.".format(
+                measure.distribution
+            )
+        )
 
     return measure_sum, measure_variance
 
@@ -56,75 +60,100 @@ def get_sql_measure_lines(name, strategy, measure, mean, **opts):
     measure_sum, measure_var = get_sum_and_variance(strategy, measure)
 
     if mean:
-        count, _ = get_sum_and_variance(strategy, 'count')
+        count, _ = get_sum_and_variance(strategy, "count")
 
         return [
             "1.0 * {measure_sum} / {count} AS {col}".format(
                 measure_sum=measure_sum,
                 count=count,
-                col=col("{}|normal|mean".format(name))
+                col=col("{}|normal|mean".format(name)),
             ),
             "1.0 * {measure_var} / {count} AS {col}".format(
                 measure_var=measure_var,
                 count=count,
-                col=col("{}|normal|variance".format(name))
-            )
+                col=col("{}|normal|variance".format(name)),
+            ),
         ]
     else:
         return [
             "{measure_sum} AS {col}".format(
-                measure_sum=measure_sum,
-                col=col("{}|normal|mean")
+                measure_sum=measure_sum, col=col("{}|normal|mean")
             ),
             "{measure_var} AS {col}".format(
-                measure_var=measure_var,
-                col=col("{}|normal|variance")
-            )
+                measure_var=measure_var, col=col("{}|normal|variance")
+            ),
         ]
 
 
 class MeasureMetric(Metric):
 
-    REGISTRY_KEYS = ['measure']
+    REGISTRY_KEYS = ["measure"]
 
     def _init(self, measure, mean=False):
-        self.opts.add_option('measure', 'The measure to be extracted.', required=False, default=measure)
-        self.opts.add_option('mean', 'Whether to take the mean of the measure over unit type.', required=False, default=mean)
+        self.opts.add_option(
+            "measure", "The measure to be extracted.", required=False, default=measure
+        )
+        self.opts.add_option(
+            "mean",
+            "Whether to take the mean of the measure over unit type.",
+            required=False,
+            default=mean,
+        )
 
-        self.add_implementation(SimpleSQLMetricImplementation(metrics_callback=get_sql_measure_lines))
+        self.add_implementation(
+            SimpleSQLMetricImplementation(metrics_callback=get_sql_measure_lines)
+        )
 
     @property
     def required_measures(self):
-        return [self.opts['measure']] + (['count'] if self.opts['mean'] else [])
+        return [self.opts["measure"]] + (["count"] if self.opts["mean"] else [])
 
     def __repr_expr__(self):
-        return "`{measure}` / `count`".format(measure=self.opts['measure']) if self.opts['mean'] else "`{measure}`".format(measure=self.opts['measure'])
+        return (
+            "`{measure}` / `count`".format(measure=self.opts["measure"])
+            if self.opts["mean"]
+            else "`{measure}`".format(measure=self.opts["measure"])
+        )
 
     def __repr_dist__(self):
         return (
             "𝒩(μ, σ²): μ = expected value of above expression; "
             "σ = standard error of the {}".format(
-                "mean" if self.opts['mean'] else "sum"
+                "mean" if self.opts["mean"] else "sum"
             )
         )
 
 
 class RatioMetric(Metric):
 
-    REGISTRY_KEYS = ['ratio']
+    REGISTRY_KEYS = ["ratio"]
 
     def _init(self, numerator, denominator):
-        self.opts.add_option('numerator', 'The numerator of the ratio.', required=False, default=numerator)
-        self.opts.add_option('denominator', 'The denominator of the ratio.', required=False, default=denominator)
+        self.opts.add_option(
+            "numerator",
+            "The numerator of the ratio.",
+            required=False,
+            default=numerator,
+        )
+        self.opts.add_option(
+            "denominator",
+            "The denominator of the ratio.",
+            required=False,
+            default=denominator,
+        )
 
-        self.add_implementation(SimpleSQLMetricImplementation(metrics_callback=get_sql_ratio_lines))
+        self.add_implementation(
+            SimpleSQLMetricImplementation(metrics_callback=get_sql_ratio_lines)
+        )
 
     @property
     def required_measures(self):
-        return [self.opts['numerator'], self.opts['denominator']]
+        return [self.opts["numerator"], self.opts["denominator"]]
 
     def __repr_expr__(self):
-        return "`{numerator}` / `{denominator}`".format(numerator=self.opts['numerator'], denominator=self.opts['denominator'])
+        return "`{numerator}` / `{denominator}`".format(
+            numerator=self.opts["numerator"], denominator=self.opts["denominator"]
+        )
 
     def __repr_dist__(self):
         return (

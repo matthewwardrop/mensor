@@ -5,15 +5,15 @@ from enum import Enum
 
 
 class CONSTRAINTS(Enum):
-    NULL = 'null'
-    AND = 'and'
-    OR = 'or'
-    IN = 'in'
-    EQUALITY = 'eq'
-    INEQUALITY_GT = 'ineq_gt'
-    INEQUALITY_GTE = 'ineq_gte'
-    INEQUALITY_LT = 'ineq_lt'
-    INEQUALITY_LTE = 'ineq_lte'
+    NULL = "null"
+    AND = "and"
+    OR = "or"
+    IN = "in"
+    EQUALITY = "eq"
+    INEQUALITY_GT = "ineq_gt"
+    INEQUALITY_GTE = "ineq_gte"
+    INEQUALITY_LT = "ineq_lt"
+    INEQUALITY_LTE = "ineq_lte"
 
 
 class BaseConstraint(metaclass=ABCMeta):
@@ -109,10 +109,10 @@ class BaseConstraint(metaclass=ABCMeta):
 
     @property
     def scoped_applicable(self):
-        if self.scoped.kind is CONSTRAINTS.AND:  # Since there is automatic suppression of nested `And`s, this one check if sufficient for generality
-            applicable = [
-                op for op in self.scoped.operands if op.applicable
-            ]
+        if (
+            self.scoped.kind is CONSTRAINTS.AND
+        ):  # Since there is automatic suppression of nested `And`s, this one check if sufficient for generality
+            applicable = [op for op in self.scoped.operands if op.applicable]
         elif self.scoped.applicable:
             applicable = [self.scoped]
         else:
@@ -120,7 +120,13 @@ class BaseConstraint(metaclass=ABCMeta):
         return And.from_operands(applicable)
 
     def scoped_for_unit_type(self, unit_type):
-        return And.from_operands(self.scoped, self.generic.via_next(unit_type if isinstance(unit_type, str) else unit_type.name, include_generic=True))
+        return And.from_operands(
+            self.scoped,
+            self.generic.via_next(
+                unit_type if isinstance(unit_type, str) else unit_type.name,
+                include_generic=True,
+            ),
+        )
 
     def generic_for_provider(self, provider):
         if self.generic.kind is CONSTRAINTS.AND:
@@ -167,7 +173,9 @@ class ContainerConstraint(BaseConstraint):
             elif isinstance(operand, BaseConstraint):
                 ops.append(operand)
             else:
-                raise ValueError("All children of a `ContainerConstraint` must be instances of subclasses of `BaseConstraint`.")
+                raise ValueError(
+                    "All children of a `ContainerConstraint` must be instances of subclasses of `BaseConstraint`."
+                )
         if len(ops) == 0:
             return NullConstraint()
         constraint = cls(ops, resolvable=resolvable)
@@ -206,7 +214,14 @@ class ContainerConstraint(BaseConstraint):
 
     def via_next(self, foreign_key, include_generic=False):
         # Any None's in this list will cause the new parent object to be unresolvable.
-        n = self.from_operands(*[op.via_next(foreign_key, include_generic=include_generic) for op in self.operands], simplify=False, resolvable=self.resolvable)
+        n = self.from_operands(
+            *[
+                op.via_next(foreign_key, include_generic=include_generic)
+                for op in self.operands
+            ],
+            simplify=False,
+            resolvable=self.resolvable
+        )
         if not n:
             return n
         if isinstance(n, Or) and len(n.operands) < len(self.operands):
@@ -229,11 +244,15 @@ class ContainerConstraint(BaseConstraint):
 
     @property
     def generic(self):
-        return self.__class__.from_operands([operand.generic for operand in self.operands if operand.has_generic])
+        return self.__class__.from_operands(
+            [operand.generic for operand in self.operands if operand.has_generic]
+        )
 
     @property
     def scoped(self):
-        return self.__class__.from_operands([operand.scoped for operand in self.operands if operand.has_scoped])
+        return self.__class__.from_operands(
+            [operand.scoped for operand in self.operands if operand.has_scoped]
+        )
 
     # Mathematical operations
     def __eq__(self, other):
@@ -249,7 +268,6 @@ class ContainerConstraint(BaseConstraint):
 
 
 class And(ContainerConstraint):
-
     @property
     def kind(self):
         return CONSTRAINTS.AND
@@ -260,8 +278,15 @@ class And(ContainerConstraint):
 
     @operands.setter
     def operands(self, operands):
-        if any(operand.has_generic and operand.has_scoped and isinstance(operand, ContainerConstraint) for operand in operands):
-            raise ValueError("Generic constraints cannot be nested with non-generic constraints.")
+        if any(
+            operand.has_generic
+            and operand.has_scoped
+            and isinstance(operand, ContainerConstraint)
+            for operand in operands
+        ):
+            raise ValueError(
+                "Generic constraints cannot be nested with non-generic constraints."
+            )
         self._operands = operands
 
     @property
@@ -287,7 +312,6 @@ class And(ContainerConstraint):
 
 
 class Or(ContainerConstraint):
-
     @property
     def kind(self):
         return CONSTRAINTS.OR
@@ -298,8 +322,12 @@ class Or(ContainerConstraint):
 
     @operands.setter
     def operands(self, operands):
-        if any(operand.has_generic for operand in operands) and any(operand.has_scoped for operand in operands):
-            raise ValueError("Generic constraints cannot be nested with non-generic constraints.")
+        if any(operand.has_generic for operand in operands) and any(
+            operand.has_scoped for operand in operands
+        ):
+            raise ValueError(
+                "Generic constraints cannot be nested with non-generic constraints."
+            )
         self._operands = operands
 
     @property
@@ -309,17 +337,17 @@ class Or(ContainerConstraint):
         depth of shared prefix.
         """
         # Get common prefix of all operands
-        common_prefix = ''.join(
-            c[0] for c in itertools.takewhile(
+        common_prefix = "".join(
+            c[0]
+            for c in itertools.takewhile(
                 lambda x: all(x[0] == y for y in x),
-                zip(*[op.field for op in self.operands if isinstance(op, Constraint)])
+                zip(*[op.field for op in self.operands if isinstance(op, Constraint)]),
             )
         )
 
-        return min([
-            len(common_prefix.split('/')) - 1,
-            min(op.depth for op in self.operands)
-        ])
+        return min(
+            [len(common_prefix.split("/")) - 1, min(op.depth for op in self.operands)]
+        )
 
     def __and__(self, other):
         if isinstance(other, And):
@@ -339,7 +367,6 @@ class Or(ContainerConstraint):
 
 
 class NullConstraint(BaseConstraint):
-
     @property
     def kind(self):
         return CONSTRAINTS.NULL
@@ -421,37 +448,50 @@ class Constraint(BaseConstraint):
             constraints = []
             for field, value in spec.items():
                 generic = False
-                if field.startswith('*/'):
+                if field.startswith("*/"):
                     generic = True
                     field = field[2:]
                 constraints.append(cls._get_constraint(field, value, generic=generic))
             return And.from_operands(*constraints)
-        raise ValueError("Invalid constraint specification: {} ({})".format(spec, type(spec)))
+        raise ValueError(
+            "Invalid constraint specification: {} ({})".format(spec, type(spec))
+        )
 
     @classmethod
     def _get_constraint(cls, field, value, generic=False):
         if isinstance(value, str):
-            m = re.match('^[<>][=]?', value)
+            m = re.match("^[<>][=]?", value)
             if m:
                 relation = m.group(0)
-                return cls(field, relation=relation, value=value[len(relation):], generic=generic)
-            return Constraint(field, '==', value, generic=generic)
+                return cls(
+                    field,
+                    relation=relation,
+                    value=value[len(relation) :],
+                    generic=generic,
+                )
+            return Constraint(field, "==", value, generic=generic)
         elif isinstance(value, list):
-            return cls.from_spec([{('*/' if generic else '') + field: v} for v in value])
+            return cls.from_spec(
+                [{("*/" if generic else "") + field: v} for v in value]
+            )
         elif isinstance(value, set):
-            if any(isinstance(v, tuple) for v in value) or all(isinstance(v, str) and re.match('^[<>][=]?', v) for v in value):
-                return cls.from_spec(tuple({('*/' if generic else '') + field: v} for v in value))
-            return Constraint(field, 'in', value, generic=generic)
+            if any(isinstance(v, tuple) for v in value) or all(
+                isinstance(v, str) and re.match("^[<>][=]?", v) for v in value
+            ):
+                return cls.from_spec(
+                    tuple({("*/" if generic else "") + field: v} for v in value)
+                )
+            return Constraint(field, "in", value, generic=generic)
         elif isinstance(value, tuple):
             assert len(value) == 2, "All explicit relations must be of length two."
             return Constraint(field, value[0], value[1], generic=generic)
 
-        return cls(field, '==', value, generic=generic)
+        return cls(field, "==", value, generic=generic)
 
     def __init__(self, field, relation, value, generic=False):
-        if relation not in ('==', '<', '<=', '>', '>=', 'in'):
+        if relation not in ("==", "<", "<=", ">", ">=", "in"):
             raise ValueError("Invalid relation specified in constraint.")
-        if generic and field.count('/') > 1:
+        if generic and field.count("/") > 1:
             raise ValueError("Generic field name cannot consist of more than one '/'.")
         self.field = field
         self.relation = relation
@@ -460,17 +500,17 @@ class Constraint(BaseConstraint):
 
     @property
     def kind(self):
-        if self.relation == '==':
+        if self.relation == "==":
             return CONSTRAINTS.EQUALITY
-        elif self.relation == '<':
+        elif self.relation == "<":
             return CONSTRAINTS.INEQUALITY_LT
-        elif self.relation == '<=':
+        elif self.relation == "<=":
             return CONSTRAINTS.INEQUALITY_LTE
-        elif self.relation == '>':
+        elif self.relation == ">":
             return CONSTRAINTS.INEQUALITY_GT
-        elif self.relation == '>=':
+        elif self.relation == ">=":
             return CONSTRAINTS.INEQUALITY_GTE
-        elif self.relation == 'in':
+        elif self.relation == "in":
             return CONSTRAINTS.IN
         raise RuntimeError("Invalid relation detected {}.".format(self.relation))
 
@@ -484,14 +524,16 @@ class Constraint(BaseConstraint):
     def depth(self):
         if self.generic:
             return 0
-        return len(self.field.split('/')) - 1
+        return len(self.field.split("/")) - 1
 
     def via_next(self, foreign_key, include_generic=False):
         if not include_generic and self.generic:
             return self
-        s = self.field.split('/')
+        s = self.field.split("/")
         if len(s) > 1 and s[0] == foreign_key:
-            return self.__class__('/'.join(s[1:]), self.relation, self.value, generic=False)
+            return self.__class__(
+                "/".join(s[1:]), self.relation, self.value, generic=False
+            )
         return NullConstraint()
 
     # Extraction of generic and scoped constraints
@@ -546,4 +588,8 @@ class Constraint(BaseConstraint):
         raise NotImplementedError
 
     def __repr__(self):
-        return "{}{}{}".format(('*/' if self.generic else '') + self.field, self.relation if self.relation != 'in' else ' ∈ ', self.value.__repr__())
+        return "{}{}{}".format(
+            ("*/" if self.generic else "") + self.field,
+            self.relation if self.relation != "in" else " ∈ ",
+            self.value.__repr__(),
+        )

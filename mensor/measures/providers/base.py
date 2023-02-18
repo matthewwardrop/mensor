@@ -33,14 +33,18 @@ class MeasureProvider(metaclass=InterfaceMeta):
 
     @classmethod
     def __register_implementation__(cls):
-        if not hasattr(cls, '_registry'):
+        if not hasattr(cls, "_registry"):
             cls._registry = {}
 
-        registry_keys = getattr(cls, 'REGISTRY_KEYS', [])
+        registry_keys = getattr(cls, "REGISTRY_KEYS", [])
         if registry_keys:
             for key in registry_keys:
                 if key in cls._registry and cls.__name__ != cls._registry[key].__name__:
-                    logging.info("Ignoring attempt by class `{}` to register key '{}', which is already registered for class `{}`.".format(cls.__name__, key, cls._registry[key].__name__))
+                    logging.info(
+                        "Ignoring attempt by class `{}` to register key '{}', which is already registered for class `{}`.".format(
+                            cls.__name__, key, cls._registry[key].__name__
+                        )
+                    )
                 else:
                     cls._registry[key] = cls
                     cls._on_registered(key)
@@ -67,7 +71,7 @@ class MeasureProvider(metaclass=InterfaceMeta):
         Returns:
             MeasureProvider instance: configured as per yaml specification.
         """
-        if '\n' not in yml:
+        if "\n" not in yml:
             with open(os.path.expanduser(yml)) as f:
                 return cls.from_dict(yaml.safe_load(f))
         else:
@@ -89,9 +93,9 @@ class MeasureProvider(metaclass=InterfaceMeta):
             MeasureProvider instance: configured as per dictionary
                 specification.
         """
-        assert 'kind' in dct
-        assert dct.get('role') in (None, 'provider')
-        klass = cls.for_kind(dct['kind'])
+        assert "kind" in dct
+        assert dct.get("role") in (None, "provider")
+        klass = cls.for_kind(dct["kind"])
         return klass._from_dict(dct)
 
     @classmethod
@@ -180,12 +184,20 @@ class MeasureProvider(metaclass=InterfaceMeta):
                 if isinstance(feature, FeatureSpec):
                     feature, extra_props = feature.as_source_with_props(unit_type)
                     props.update(extra_props)
-                r = self._resolve(unit_type=unit_type, feature=feature, role=role, with_props=props)
+                r = self._resolve(
+                    unit_type=unit_type, feature=feature, role=role, with_props=props
+                )
                 resolved[r] = r
             except ValueError:
                 unresolvable.append(feature)
         if len(unresolvable):
-            raise ValueError("Could not resolve {}(s) associated with unit_type '{}' for: '{}'".format(role or 'feature', unit_type.__repr__(), "', '".join(str(dim) for dim in unresolvable)))
+            raise ValueError(
+                "Could not resolve {}(s) associated with unit_type '{}' for: '{}'".format(
+                    role or "feature",
+                    unit_type.__repr__(),
+                    "', '".join(str(dim) for dim in unresolvable),
+                )
+            )
 
         if return_one:
             return resolved.first
@@ -196,7 +208,9 @@ class MeasureProvider(metaclass=InterfaceMeta):
             if with_props:
                 feature = feature.with_props(**with_props)
             return feature
-        assert isinstance(feature, six.string_types), f"Invalid feature to resolve '{feature}'."
+        assert isinstance(
+            feature, six.string_types
+        ), f"Invalid feature to resolve '{feature}'."
 
         # Resolve hierarchical identifiers
         # TODO: Neaten? Move behaviour to a staticmethod of Identifier?
@@ -205,46 +219,78 @@ class MeasureProvider(metaclass=InterfaceMeta):
         elif isinstance(unit_type, Feature):
             unit_type = unit_type.name
 
-        if startseq_match(unit_type.split(':'), feature.split(':')):
+        if startseq_match(unit_type.split(":"), feature.split(":")):
             return self.identifier_for_unit(unit_type).resolve(mask=feature)
-        elif startseq_match(feature.split(':'), unit_type.split(':')):
-            raise ValueError(f"Attempting to resolve a parent unit_type ({feature}) via a child ({unit_type}).")
+        elif startseq_match(feature.split(":"), unit_type.split(":")):
+            raise ValueError(
+                f"Attempting to resolve a parent unit_type ({feature}) via a child ({unit_type})."
+            )
 
-        return self._find_feature(unit_type, feature, role=role).resolve(**{'mask': feature, **(with_props or {})})
+        return self._find_feature(unit_type, feature, role=role).resolve(
+            **{"mask": feature, **(with_props or {})}
+        )
 
     def _find_feature(self, unit_type, feature, role=None):
-        if role in (None, 'identifier', 'dimension', 'foreign_key'):
+        if role in (None, "identifier", "dimension", "foreign_key"):
             if feature in self.foreign_keys_for_unit(unit_type):
                 return self.foreign_keys_for_unit(unit_type)[feature]
-        if role in (None, 'reverse_foreign_key'):
+        if role in (None, "reverse_foreign_key"):
             if feature in self.reverse_foreign_keys_for_unit(unit_type):
                 return self.reverse_foreign_keys_for_unit(unit_type)[feature]
-        if role in (None, 'dimension') and feature in self.dimensions_for_unit(unit_type):
+        if role in (None, "dimension") and feature in self.dimensions_for_unit(
+            unit_type
+        ):
             return self.dimensions_for_unit(unit_type)[feature]
-        if role in (None, 'dimension', 'measure') and feature in self.measures_for_unit(unit_type):
+        if role in (None, "dimension", "measure") and feature in self.measures_for_unit(
+            unit_type
+        ):
             return self.measures_for_unit(unit_type)[feature]
-        raise ValueError("No such {} for unit type {} named: {}.".format(role or 'feature', unit_type, feature))
+        raise ValueError(
+            "No such {} for unit type {} named: {}.".format(
+                role or "feature", unit_type, feature
+            )
+        )
 
     @abstractmethod
-    def evaluate(self, unit_type, measures=None, segment_by=None, where=None,
-                 joins=None, stats=True, covariates=False, context=None,
-                 stats_registry=None, **opts):
+    def evaluate(
+        self,
+        unit_type,
+        measures=None,
+        segment_by=None,
+        where=None,
+        joins=None,
+        stats=True,
+        covariates=False,
+        context=None,
+        stats_registry=None,
+        **opts,
+    ):
         pass
 
     @abstractmethod
-    def get_ir(self, unit_type, measures=None, segment_by=None, where=None,
-               joins=None, stats=True, covariates=False, context=None,
-               stats_registry=None, **opts):
+    def get_ir(
+        self,
+        unit_type,
+        measures=None,
+        segment_by=None,
+        where=None,
+        joins=None,
+        stats=True,
+        covariates=False,
+        context=None,
+        stats_registry=None,
+        **opts,
+    ):
         pass
 
     # MeasureProvider compatibility
     def is_compatible_with(self, provider):
-        '''
+        """
         If this method returns True, this MeasureProvider can take responsibility
         for evaluation and/or interpreting the required fields from the provided
         provider; otherwise, any required joins will be performed in memory in
         pandas.
-        '''
+        """
         return False
 
     # Runtime introspection
@@ -259,31 +305,46 @@ class MeasureProvider(metaclass=InterfaceMeta):
 
     def _show(self, *unit_types, kind=None, context=None):
         out = []
-        unit_types = tuple(self.identifier_for_unit(ut) for ut in unit_types) if len(unit_types) > 0 else tuple(sorted(self.identifiers))
+        unit_types = (
+            tuple(self.identifier_for_unit(ut) for ut in unit_types)
+            if len(unit_types) > 0
+            else tuple(sorted(self.identifiers))
+        )
         if isinstance(kind, str):
             kind = [kind]
         if not kind:
-            kind = ['foreign_key', 'reverse_foreign_key', 'dimension', 'partition', 'measure']
+            kind = [
+                "foreign_key",
+                "reverse_foreign_key",
+                "dimension",
+                "partition",
+                "measure",
+            ]
 
         for unit_type in unit_types:
             section_title = "{}:{}".format(
-                unit_type.name,
-                " [{}]".format(unit_type.desc) if unit_type.desc else ""
+                unit_type.name, " [{}]".format(unit_type.desc) if unit_type.desc else ""
             )
             section_title_shown = False
 
             features = {
-                'foreign_key': self.foreign_keys_for_unit(unit_type),
-                'reverse_foreign_key': self.reverse_foreign_keys_for_unit(unit_type),
-                'dimension': self.dimensions_for_unit(unit_type, include_partitions=False),
-                'partition': self.partitions_for_unit(unit_type),
-                'measure': self.measures_for_unit(unit_type)
+                "foreign_key": self.foreign_keys_for_unit(unit_type),
+                "reverse_foreign_key": self.reverse_foreign_keys_for_unit(unit_type),
+                "dimension": self.dimensions_for_unit(
+                    unit_type, include_partitions=False
+                ),
+                "partition": self.partitions_for_unit(unit_type),
+                "measure": self.measures_for_unit(unit_type),
             }
 
             for k in kind:
-                feature_name = "{}s".format(k.replace('_', ' ').title())
+                feature_name = "{}s".format(k.replace("_", " ").title())
                 feature_set = features[k]
-                if not len(feature_set) or len(feature_set) == 1 and feature_set.first == unit_type:
+                if (
+                    not len(feature_set)
+                    or len(feature_set) == 1
+                    and feature_set.first == unit_type
+                ):
                     continue
                 if not section_title_shown:
                     out.append(section_title)
@@ -294,7 +355,7 @@ class MeasureProvider(metaclass=InterfaceMeta):
                         out.append(
                             "        - {}{}".format(
                                 feature.name,
-                                " [{}]".format(feature.desc) if feature.desc else ""
+                                " [{}]".format(feature.desc) if feature.desc else "",
                             )
                         )
 

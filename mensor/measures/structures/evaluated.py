@@ -6,18 +6,19 @@ from uncertainties.unumpy import uarray
 
 from ..registries import global_stats_registry
 
-__all__ = ['EvaluatedMeasures']
+__all__ = ["EvaluatedMeasures"]
 
 
 class EvaluatedMeasures(object):
-
     @classmethod
     def for_measures(cls, evaluations, stats_registry=None):
         if isinstance(evaluations, EvaluatedMeasures):
             return evaluations
         elif isinstance(evaluations, pd.DataFrame):
             return cls(evaluations, stats_registry=stats_registry)
-        raise RuntimeError("Invalid measures type: {}".format(evaluations.__class__.__name__))
+        raise RuntimeError(
+            "Invalid measures type: {}".format(evaluations.__class__.__name__)
+        )
 
     def __init__(self, evaluations, stats_registry=None):
         self._evaluations = evaluations
@@ -51,29 +52,33 @@ class EvaluatedMeasures(object):
 
     @property
     def measure_fields(self):
-        return [col for col in self._evaluations.columns if '|' in col]
+        return [col for col in self._evaluations.columns if "|" in col]
 
     @property
     def measures(self):
-        return list(set(field.split('|')[0] for field in self.measure_fields))
+        return list(set(field.split("|")[0] for field in self.measure_fields))
 
     @property
     def dimensions(self):
-        return [col for col in self._evaluations.columns if '|' not in col]
+        return [col for col in self._evaluations.columns if "|" not in col]
 
     def _get_measure_distribution(self, name):
         for field in self.measure_fields:
             if field.startswith(name):
-                if len(field.split('|')) == 3:
-                    return field.split('|')[1].lower()
+                if len(field.split("|")) == 3:
+                    return field.split("|")[1].lower()
                 return None
 
     def _get_measure_distribution_fields(self, name):
         distribution = self._get_measure_distribution(name)
-        return self.raw[[
-            '{}|{}'.format(name, field) if distribution is None else '{}|{}|{}'.format(name, distribution, field)
-            for field in self._stats_registry.distributions.get_stats(distribution)
-        ]]
+        return self.raw[
+            [
+                "{}|{}".format(name, field)
+                if distribution is None
+                else "{}|{}|{}".format(name, distribution, field)
+                for field in self._stats_registry.distributions.get_stats(distribution)
+            ]
+        ]
 
     def _get_measure(self, name):
 
@@ -82,7 +87,9 @@ class EvaluatedMeasures(object):
             raise KeyError(name)
 
         distribution = self._get_measure_distribution(name)
-        distribution_fields = self._get_measure_distribution_fields(name).values.transpose()
+        distribution_fields = self._get_measure_distribution_fields(
+            name
+        ).values.transpose()
 
         stats = self._stats_registry.distributions.get_scipy_repr(distribution)
 
@@ -92,9 +99,15 @@ class EvaluatedMeasures(object):
                 params = {
                     param: f(*distribution_fields) for param, f in stats[1].items()
                 }
-                return pd.Series(uarray(model.mean(**params), model.std(**params)), name=name, index=self.raw.index)
+                return pd.Series(
+                    uarray(model.mean(**params), model.std(**params)),
+                    name=name,
+                    index=self.raw.index,
+                )
         elif stats:
-            return pd.Series(stats(*distribution_fields), name=name, index=self.raw.index)
+            return pd.Series(
+                stats(*distribution_fields), name=name, index=self.raw.index
+            )
 
         return distribution_fields[0]  # If no stats, return raw sum field
 
@@ -109,10 +122,7 @@ class EvaluatedMeasures(object):
         segment_by = segment_by or []
         if len(segment_by):
             return EvaluatedMeasures(
-                self._evaluations
-                .groupby(segment_by)
-                [self.measure_fields]
-                .sum()
+                self._evaluations.groupby(segment_by)[self.measure_fields].sum()
             )
         return EvaluatedMeasures(self._evaluations[self.measure_fields].sum())
 
@@ -125,7 +135,7 @@ class EvaluatedMeasures(object):
 
     def _repr_html_(self):
         df = self.to_frame()
-        if hasattr(df, '_repr_html_'):
+        if hasattr(df, "_repr_html_"):
             return df._repr_html_()
         raise NotImplementedError
 

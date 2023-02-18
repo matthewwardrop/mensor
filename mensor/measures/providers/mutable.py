@@ -11,7 +11,7 @@ from ..structures.resolved import ResolvedFeature
 from ..structures.join import Join
 
 
-__all__ = ['MutableMeasureProvider']
+__all__ = ["MutableMeasureProvider"]
 
 
 class MutableMeasureProvider(MeasureProvider):
@@ -35,17 +35,24 @@ class MutableMeasureProvider(MeasureProvider):
     @classmethod
     def _from_dict(cls, dct):
         instance = cls(
-            name=dct.get('name'),
-            identifiers=dct.get('identifiers'),
-            measures=dct.get('measures'),
-            dimensions=dct.get('dimensions'),
-            provisions=dct.get('provisions'),
-            **dct.get('opts', {})
+            name=dct.get("name"),
+            identifiers=dct.get("identifiers"),
+            measures=dct.get("measures"),
+            dimensions=dct.get("dimensions"),
+            provisions=dct.get("provisions"),
+            **dct.get("opts", {})
         )
         return instance
 
-    def __init__(self, name=None, *, identifiers=None, measures=None, dimensions=None,
-                 provisions=None):
+    def __init__(
+        self,
+        name=None,
+        *,
+        identifiers=None,
+        measures=None,
+        dimensions=None,
+        provisions=None
+    ):
         MeasureProvider.__init__(self, name)
 
         self.identifiers = identifiers
@@ -63,28 +70,30 @@ class MutableMeasureProvider(MeasureProvider):
         return dims
 
     def __repr__(self):
-        return '{}<{}>'.format(self.__class__.__name__, self.name)
+        return "{}<{}>".format(self.__class__.__name__, self.name)
 
     # Statistical unit specifications
 
     @property
     def identifiers(self):
-        '''
+        """
         Dict matching type of abstract statistical unit ('user', 'user:guest', 'user:host',
         'reservation', etc) to a material internal id specification.
         To use a namespace, add a name after a ':' character,
         e.g. 'user:guest' or 'user:host', whereupon all of the features
         granted to a 'user' type will be prefixed in this context,
         e.g. 'guest:dim_country'
-        '''
+        """
         return self._identifiers
 
     @identifiers.setter
     def identifiers(self, identifiers):
         self._identifiers = self._get_dimensions_from_specs(Identifier, identifiers)
 
-    def add_identifier(self, unit_type, expr=None, desc=None, role='foreign'):
-        identifier = Identifier(unit_type, expr=expr, desc=desc, role=role, provider=self)
+    def add_identifier(self, unit_type, expr=None, desc=None, role="foreign"):
+        identifier = Identifier(
+            unit_type, expr=expr, desc=desc, role=role, provider=self
+        )
         self._identifiers.append(identifier)
         return self
 
@@ -95,20 +104,28 @@ class MutableMeasureProvider(MeasureProvider):
     def identifier_for_unit(self, unit_type):
         if unit_type is None:
             return None
-        if isinstance(unit_type, str) and unit_type.startswith('!'):
+        if isinstance(unit_type, str) and unit_type.startswith("!"):
             if unit_type[1:] != self.name:
-                raise ValueError("No provider of name '{}' (this provider is named '{}').".format(unit_type[1:], self.name))
+                raise ValueError(
+                    "No provider of name '{}' (this provider is named '{}').".format(
+                        unit_type[1:], self.name
+                    )
+                )
             return None
         if isinstance(unit_type, ResolvedFeature):
             unit_type = unit_type.feature
         if isinstance(unit_type, Feature):
-            assert isinstance(unit_type, Identifier), "Provided feature is not an identifier."
+            assert isinstance(
+                unit_type, Identifier
+            ), "Provided feature is not an identifier."
             if unit_type.provider is self:
                 return unit_type
             unit_type = unit_type.name
         if unit_type in self.identifiers:
             return self.identifiers[unit_type]
-        for identifier in sorted(self.identifiers, key=lambda x: len(x.name), reverse=True):
+        for identifier in sorted(
+            self.identifiers, key=lambda x: len(x.name), reverse=True
+        ):
             if identifier.matches(unit_type):
                 return identifier
         raise ValueError("No such identifier: '{}'.".format(unit_type))
@@ -121,7 +138,9 @@ class MutableMeasureProvider(MeasureProvider):
         foreign_keys = SequenceMap()
         for foreign_key in self.identifiers:
             if self._unit_has_foreign_key(unit_type, foreign_key):
-                if unit_type.name == foreign_key and isinstance(unit_type, ResolvedFeature):
+                if unit_type.name == foreign_key and isinstance(
+                    unit_type, ResolvedFeature
+                ):
                     foreign_key = foreign_key.resolve(mask=unit_type.mask)
                 foreign_keys.append(foreign_key)
         return foreign_keys
@@ -142,8 +161,24 @@ class MutableMeasureProvider(MeasureProvider):
     def dimensions(self, dimensions):
         self._dimensions = self._get_dimensions_from_specs(Dimension, dimensions)
 
-    def add_dimension(self, name=None, desc=None, expr=None, default=None, shared=False, requires_constraint=False):
-        dimension = Dimension(name, desc=desc, expr=expr, default=default, shared=shared, requires_constraint=requires_constraint, provider=self)
+    def add_dimension(
+        self,
+        name=None,
+        desc=None,
+        expr=None,
+        default=None,
+        shared=False,
+        requires_constraint=False,
+    ):
+        dimension = Dimension(
+            name,
+            desc=desc,
+            expr=expr,
+            default=default,
+            shared=shared,
+            requires_constraint=requires_constraint,
+            provider=self,
+        )
         self._dimensions.append(dimension)
         return self
 
@@ -154,9 +189,8 @@ class MutableMeasureProvider(MeasureProvider):
 
         dimensions = SequenceMap()
         for dimension in self.dimensions:
-            if (
-                self._unit_has_dimension(unit_type, dimension)
-                and (include_partitions or not dimension.partition)
+            if self._unit_has_dimension(unit_type, dimension) and (
+                include_partitions or not dimension.partition
             ):
                 dimensions.append(dimension)
         return dimensions
@@ -173,13 +207,23 @@ class MutableMeasureProvider(MeasureProvider):
     # functionally equivalent in most cases.
     # (partitions behave differently in joins TODO: document this difference)
     def add_partition(self, name=None, desc=None, expr=None, requires_constraint=False):
-        dimension = Dimension(name, desc=desc, expr=expr, shared=True, partition=True, requires_constraint=requires_constraint, provider=self)
+        dimension = Dimension(
+            name,
+            desc=desc,
+            expr=expr,
+            shared=True,
+            partition=True,
+            requires_constraint=requires_constraint,
+            provider=self,
+        )
         self._dimensions.append(dimension)
         return self
 
     def partitions_for_unit(self, unit_type):
         return {
-            dimension: dimension for dimension in self.dimensions_for_unit(unit_type) if dimension.partition
+            dimension: dimension
+            for dimension in self.dimensions_for_unit(unit_type)
+            if dimension.partition
         }
 
     # Measure specifications
@@ -192,8 +236,24 @@ class MutableMeasureProvider(MeasureProvider):
     def measures(self, measures):
         self._measures = self._get_dimensions_from_specs(Measure, measures)
 
-    def add_measure(self, name=None, expr=None, default=None, desc=None, shared=False, distribution='normal'):
-        measure = Measure(name, expr=expr, default=default, desc=desc, shared=shared, distribution=distribution, provider=self)
+    def add_measure(
+        self,
+        name=None,
+        expr=None,
+        default=None,
+        desc=None,
+        shared=False,
+        distribution="normal",
+    ):
+        measure = Measure(
+            name,
+            expr=expr,
+            default=default,
+            desc=desc,
+            shared=shared,
+            distribution=distribution,
+            provider=self,
+        )
         self._measures.append(measure)
         return self
 
@@ -214,12 +274,12 @@ class MutableMeasureProvider(MeasureProvider):
     @property
     def provisions(self):
         return {
-            name: kwargs['source'].get_strategy(
-                unit_type=kwargs['unit_type'],
-                measures=kwargs['measures'],
-                segment_by=kwargs['segment_by'],
-                where=kwargs['where'],
-                **kwargs['opts']
+            name: kwargs["source"].get_strategy(
+                unit_type=kwargs["unit_type"],
+                measures=kwargs["measures"],
+                segment_by=kwargs["segment_by"],
+                where=kwargs["where"],
+                **kwargs["opts"]
             )
             for name, kwargs in self._provisions.items()
         }
@@ -228,42 +288,99 @@ class MutableMeasureProvider(MeasureProvider):
     def provisions(self, provisions):
         self._provisions = provisions or {}
 
-    def requires_provision(self, name, unit_type, measures=None, segment_by=None, where=None,
-                           source=None, **opts):
-        assert 'dry_run' not in opts, "Cannot hard specify 'dry_run' in provision options."
+    def requires_provision(
+        self,
+        name,
+        unit_type,
+        measures=None,
+        segment_by=None,
+        where=None,
+        source=None,
+        **opts
+    ):
+        assert (
+            "dry_run" not in opts
+        ), "Cannot hard specify 'dry_run' in provision options."
         self._provisions[name] = {
-            'unit_type': unit_type,
-            'measures': measures,
-            'segment_by': segment_by,
-            'where': where,
-            'source': source,
-            'opts': opts
+            "unit_type": unit_type,
+            "measures": measures,
+            "segment_by": segment_by,
+            "where": where,
+            "source": source,
+            "opts": opts,
         }
         return self
 
     # Evaluation
     def _prepare_evaluation_args(f):
-        def wrapped(self, unit_type, measures=None, segment_by=None, where=None, joins=None, stats=True, covariates=False, context=None, stats_registry=None, **opts):
+        def wrapped(
+            self,
+            unit_type,
+            measures=None,
+            segment_by=None,
+            where=None,
+            joins=None,
+            stats=True,
+            covariates=False,
+            context=None,
+            stats_registry=None,
+            **opts
+        ):
             unit_type = self.identifier_for_unit(unit_type)
             if isinstance(measures, (str, Feature)):
                 measures = [measures]
-            measures = SequenceMap() if measures is None else self.resolve(unit_type=unit_type, features=measures, role='measure')
+            measures = (
+                SequenceMap()
+                if measures is None
+                else self.resolve(
+                    unit_type=unit_type, features=measures, role="measure"
+                )
+            )
             if isinstance(segment_by, (str, Feature)):
                 segment_by = [segment_by]
-            segment_by = SequenceMap() if segment_by is None else self.resolve(unit_type=unit_type, features=segment_by, role='dimension')
+            segment_by = (
+                SequenceMap()
+                if segment_by is None
+                else self.resolve(
+                    unit_type=unit_type, features=segment_by, role="dimension"
+                )
+            )
             where = Constraint.from_spec(where)
             joins = joins or []
             stats_registry = stats_registry or global_stats_registry
             context = context or {}
 
             # opts = self.opts.process(**opts)
-            return f(self, unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, stats=stats, covariates=covariates, context=context, stats_registry=stats_registry, **opts)
+            return f(
+                self,
+                unit_type,
+                measures=measures,
+                segment_by=segment_by,
+                where=where,
+                joins=joins,
+                stats=stats,
+                covariates=covariates,
+                context=context,
+                stats_registry=stats_registry,
+                **opts
+            )
+
         return wrapped
 
     @_prepare_evaluation_args
-    def evaluate(self, unit_type, measures=None, segment_by=None, where=None,
-                 joins=None, stats=True, covariates=False, context=None,
-                 stats_registry=None, **opts):
+    def evaluate(
+        self,
+        unit_type,
+        measures=None,
+        segment_by=None,
+        where=None,
+        joins=None,
+        stats=True,
+        covariates=False,
+        context=None,
+        stats_registry=None,
+        **opts
+    ):
         """
         This method evaluates the requested `measures` in this MeasureProvider
         segmented by the dimensions in `segment_by` after joining in the
@@ -290,7 +407,9 @@ class MutableMeasureProvider(MeasureProvider):
         Returns:
             EvaluatedMeasures: A wrapper around the dataframe of the results of the computation.
         """
-        from mensor.backends.pandas import PandasMeasureProvider  # We need this for some pandas transformations
+        from mensor.backends.pandas import (
+            PandasMeasureProvider,
+        )  # We need this for some pandas transformations
 
         # Split joins into compatible and incompatible joins; 'joins_pre' and
         # 'joins_post' (so-called because compatible joins occur before any
@@ -301,8 +420,8 @@ class MutableMeasureProvider(MeasureProvider):
         # If there are post-joins, we will need to add the 'count' measure
         # (assuming it has not already been requested), so that we can weight
         # post-joins appropriately.
-        if len(joins_post) > 0 and 'count' not in measures:
-            count_measure = self.measures['count'].as_private
+        if len(joins_post) > 0 and "count" not in measures:
+            count_measure = self.measures["count"].as_private
             measures[count_measure] = count_measure
 
         # If there are post-joins, we need to ensure that the pre- operations
@@ -316,8 +435,15 @@ class MutableMeasureProvider(MeasureProvider):
         # Moreover, if there are post-joins and where constraints, some of the constraints
         # may need to be applied after post-joins. As such, we split the where
         # constraints into where_pre and where_post.
-        measures_pre, segment_by_pre, where_pre, measures_post, segment_by_post, where_post = (
-            self._compat_fields_split(measures, segment_by, where, joins_post=joins_post)
+        (
+            measures_pre,
+            segment_by_pre,
+            where_pre,
+            measures_post,
+            segment_by_post,
+            where_post,
+        ) = self._compat_fields_split(
+            measures, segment_by, where, joins_post=joins_post
         )
 
         # Allow MeasureProvider instance to evaluate all pre- computations.
@@ -346,27 +472,49 @@ class MutableMeasureProvider(MeasureProvider):
                         join.object.raw,
                         left_on=join.left_on,
                         right_on=join.right_on,
-                        how=join.how
+                        how=join.how,
                     )
 
             # Check columns in resulting dataframe
-            expected_columns = Measure.get_all_fields(measures_post, unit_type=unit_type, rebase_agg=True, stats_registry=stats_registry, stats=False) + [f.via_name for f in segment_by_post]
+            expected_columns = Measure.get_all_fields(
+                measures_post,
+                unit_type=unit_type,
+                rebase_agg=True,
+                stats_registry=stats_registry,
+                stats=False,
+            ) + [f.via_name for f in segment_by_post]
             excess_columns = set(result.columns).difference(expected_columns)
             missing_columns = set(expected_columns).difference(result.columns)
-            if len(excess_columns):  # remove any unnecessary columns (such as now used join keys)
+            if len(
+                excess_columns
+            ):  # remove any unnecessary columns (such as now used join keys)
                 result = result.drop(excess_columns, axis=1)
             if len(missing_columns):
-                raise RuntimeError('Data is missing columns: {}.'.format(missing_columns))
+                raise RuntimeError(
+                    "Data is missing columns: {}.".format(missing_columns)
+                )
 
             # All new joined in measures need to be multiplied by the count series of
             # this dataframe, so that they are properly weighted.
             if len(joined_measure_fields) > 0:
-                result = result.apply(lambda col: result['count|raw'] * col if col.name in joined_measure_fields else col, axis=0)
+                result = result.apply(
+                    lambda col: result["count|raw"] * col
+                    if col.name in joined_measure_fields
+                    else col,
+                    axis=0,
+                )
 
             result = PandasMeasureProvider._finalise_dataframe(
-                df=result, unit_type=unit_type, measures=measures_post, segment_by=segment_by_post,
-                where=where_post, stats=stats, stats_registry=stats_registry, covariates=covariates,
-                rebase_agg=False, reagg=False
+                df=result,
+                unit_type=unit_type,
+                measures=measures_post,
+                segment_by=segment_by_post,
+                where=where_post,
+                stats=stats,
+                stats_registry=stats_registry,
+                covariates=covariates,
+                rebase_agg=False,
+                reagg=False,
             )
 
         return EvaluatedMeasures.for_measures(result, stats_registry=stats_registry)
@@ -388,27 +536,42 @@ class MutableMeasureProvider(MeasureProvider):
         join_post_fields = []  # TODO: Use dictionaries for performance
         for join in joins_post:
             join_post_fields.extend([m.as_via(join.join_prefix) for m in join.measures])
-            join_post_fields.extend([d.as_via(join.join_prefix) for d in join.dimensions])
+            join_post_fields.extend(
+                [d.as_via(join.join_prefix) for d in join.dimensions]
+            )
 
-        join_left_post_keys = list(itertools.chain(*[  # TODO: Use dictionaries for performance
-            join.left_on
-            for join in joins_post
-        ]))
+        join_left_post_keys = list(
+            itertools.chain(
+                *[  # TODO: Use dictionaries for performance
+                    join.left_on for join in joins_post
+                ]
+            )
+        )
 
-        join_right_post_keys = list(itertools.chain(*[  # TODO: Use dictionaries for performance
-            join.right_on
-            for join in joins_post
-        ]))
+        join_right_post_keys = list(
+            itertools.chain(
+                *[  # TODO: Use dictionaries for performance
+                    join.right_on for join in joins_post
+                ]
+            )
+        )
 
         # Process constraint clauses
         where_pre = []
         where_post = []
 
         def add_constraint(op):
-            if len(set(op.dimensions).intersection([
-                d if isinstance(d, str) else d.via_name
-                for d in (join_post_fields + join_right_post_keys)
-            ])) > 0:
+            if (
+                len(
+                    set(op.dimensions).intersection(
+                        [
+                            d if isinstance(d, str) else d.via_name
+                            for d in (join_post_fields + join_right_post_keys)
+                        ]
+                    )
+                )
+                > 0
+            ):
                 where_post.append(op)
             else:
                 where_pre.append(op)
@@ -432,7 +595,11 @@ class MutableMeasureProvider(MeasureProvider):
                 if feature.external and feature in join_post_fields:
                     post[feature] = feature
                     continue
-                if feature.private and feature in (join_left_post_keys + extra_public_keys + (where_post.dimensions if where_post else [])):
+                if feature.private and feature in (
+                    join_left_post_keys
+                    + extra_public_keys
+                    + (where_post.dimensions if where_post else [])
+                ):
                     pre[feature.as_public] = feature.as_public
                 else:
                     pre[feature] = feature
@@ -441,13 +608,33 @@ class MutableMeasureProvider(MeasureProvider):
 
             return pre, post
 
-        measures_pre, measures_post = features_split(measures, [self.resolve(unit_type=None, features='count', role='dimension')])
+        measures_pre, measures_post = features_split(
+            measures, [self.resolve(unit_type=None, features="count", role="dimension")]
+        )
         segment_by_pre, segment_by_post = features_split(segment_by)
 
-        return measures_pre, segment_by_pre, where_pre, measures_post, segment_by_post, where_post
+        return (
+            measures_pre,
+            segment_by_pre,
+            where_pre,
+            measures_post,
+            segment_by_post,
+            where_post,
+        )
 
-    def _evaluate(self, unit_type, measures, segment_by, where, joins, stats,
-                  covariates, context, stats_registry, **opts):
+    def _evaluate(
+        self,
+        unit_type,
+        measures,
+        segment_by,
+        where,
+        joins,
+        stats,
+        covariates,
+        context,
+        stats_registry,
+        **opts
+    ):
         """
         MeasureProviders must in their _evaluate function (in logical order):
 
@@ -477,12 +664,24 @@ class MutableMeasureProvider(MeasureProvider):
         raise NotImplementedError("Generic implementation not implemented.")
 
     @_prepare_evaluation_args
-    def get_ir(self, unit_type, measures=None, segment_by=None, where=None,
-               joins=None, stats=True, covariates=False, context=None,
-               stats_registry=None, **opts):
+    def get_ir(
+        self,
+        unit_type,
+        measures=None,
+        segment_by=None,
+        where=None,
+        joins=None,
+        stats=True,
+        covariates=False,
+        context=None,
+        stats_registry=None,
+        **opts
+    ):
         # Get intermediate representation for this evaluation query
         if not all(isinstance(j, Join) and j.compatible for j in joins):
-            raise RuntimeError("All joins for IR must be compatible with this provider.")
+            raise RuntimeError(
+                "All joins for IR must be compatible with this provider."
+            )
         return self._get_ir(
             unit_type=unit_type,
             measures=measures,
@@ -496,8 +695,19 @@ class MutableMeasureProvider(MeasureProvider):
             **opts
         )
 
-    def _get_ir(self, unit_type, measures, segment_by, where, joins, stats,
-                covariates, context, stats_registry, **opts):
+    def _get_ir(
+        self,
+        unit_type,
+        measures,
+        segment_by,
+        where,
+        joins,
+        stats,
+        covariates,
+        context,
+        stats_registry,
+        **opts
+    ):
         raise NotImplementedError
 
     # Constraint interpretation
@@ -517,5 +727,9 @@ class MutableMeasureProvider(MeasureProvider):
         """
 
         if kind not in self._constraint_maps:
-            raise NotImplementedError("{} cannot apply constraints of kind: `{}`".format(self.__class__.__name__, kind))
+            raise NotImplementedError(
+                "{} cannot apply constraints of kind: `{}`".format(
+                    self.__class__.__name__, kind
+                )
+            )
         return self._constraint_maps[kind]

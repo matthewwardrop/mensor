@@ -6,7 +6,6 @@ import scipy.stats
 
 # Statistics Registry base classe
 class Registry:
-
     def __init__(self, fallback=None):
         self._fallback = fallback
         self.__store = {}
@@ -47,7 +46,6 @@ class Registry:
 
 
 class AggregationRegistry(Registry):
-
     def register(self, name, backend, agg):
         return self._store(name, backend, value=agg)
 
@@ -70,12 +68,15 @@ class AggregationRegistry(Registry):
 
     def for_provider(self, provider):
         if not provider.REGISTRY_KEYS:
-            raise RuntimeError("Provider {} is not an instance of any registered backend.".format(provider))
+            raise RuntimeError(
+                "Provider {} is not an instance of any registered backend.".format(
+                    provider
+                )
+            )
         return self.for_backend(provider.REGISTRY_KEYS[0])
 
 
 class TransformRegistry(Registry):
-
     def register(self, name, backend, transform):
         return self._store(name, backend, value=transform)
 
@@ -98,47 +99,62 @@ class TransformRegistry(Registry):
 
     def for_provider(self, provider):
         if not provider.REGISTRY_KEYS:
-            raise RuntimeError("Provider {} is not an instance of any registered backend.".format(provider))
+            raise RuntimeError(
+                "Provider {} is not an instance of any registered backend.".format(
+                    provider
+                )
+            )
         return self.for_backend(provider.REGISTRY_KEYS[0])
 
 
 class DistributionRegistry(Registry):
-
     def register(self, name, stats, scipy_class, scipy_params):
-        return self._store(name, value={
-            'stats': stats,
-            'scipy_class': scipy_class,
-            'scipy_params': scipy_params
-        })
+        return self._store(
+            name,
+            value={
+                "stats": stats,
+                "scipy_class": scipy_class,
+                "scipy_params": scipy_params,
+            },
+        )
 
     def get(self, name):
         return self._fetch(name)
 
     def get_stats(self, name):
-        return self.get(name)['stats']
+        return self.get(name)["stats"]
 
     def get_scipy_repr(self, name):
         dist = self.get(name)
-        return (dist['scipy_class'], dist['scipy_params'])
+        return (dist["scipy_class"], dist["scipy_params"])
 
     def list(self):
         return self._keys()
 
 
 class StatsRegistry:
-
-    def __init__(self, aggregations=None, transforms=None, distributions=None, fallback=None):
-        self.aggregations = aggregations or AggregationRegistry(fallback=fallback.aggregations if fallback else None)
-        self.transforms = transforms or TransformRegistry(fallback=fallback.transforms if fallback else None)
-        self.distributions = distributions or DistributionRegistry(fallback=fallback.distributions if fallback else None)
+    def __init__(
+        self, aggregations=None, transforms=None, distributions=None, fallback=None
+    ):
+        self.aggregations = aggregations or AggregationRegistry(
+            fallback=fallback.aggregations if fallback else None
+        )
+        self.transforms = transforms or TransformRegistry(
+            fallback=fallback.transforms if fallback else None
+        )
+        self.distributions = distributions or DistributionRegistry(
+            fallback=fallback.distributions if fallback else None
+        )
 
     def distribution_for_provider(self, distribution, provider):
         backend = provider.REGISTRY_KEYS[0]
         fields = self.distributions.get_stats(distribution)
-        return OrderedDict([
-            (name, self.aggregations.get(agg, backend))
-            for name, agg in fields.items()
-        ])
+        return OrderedDict(
+            [
+                (name, self.aggregations.get(agg, backend))
+                for name, agg in fields.items()
+            ]
+        )
 
 
 # Create and populate global stats registry
@@ -149,48 +165,42 @@ register_distn = global_stats_registry.distributions.register
 # Raw distribution (distribution thrown away or manually recorded)
 register_distn(
     name=None,
-    stats=OrderedDict([
-        ('raw', 'raw'),
-    ]),
+    stats=OrderedDict(
+        [
+            ("raw", "raw"),
+        ]
+    ),
     scipy_class=None,
-    scipy_params=None
+    scipy_params=None,
 )
 
 # Count distribution
 register_distn(
-    name='count',
-    stats=OrderedDict([
-        ('count', 'sum'),
-    ]),
+    name="count",
+    stats=OrderedDict(
+        [
+            ("count", "sum"),
+        ]
+    ),
     scipy_class=None,
-    scipy_params=None
+    scipy_params=None,
 )
 
 # Normal
 register_distn(
-    name='normal',
-    stats=OrderedDict([
-        ('sum', 'sum'),
-        ('sos', 'sos'),
-        ('count', 'count')
-    ]),
+    name="normal",
+    stats=OrderedDict([("sum", "sum"), ("sos", "sos"), ("count", "count")]),
     scipy_class=scipy.stats.distributions.norm,
     scipy_params={
-        'loc': lambda sum, sos, count: sum,
-        'scale': lambda sum, sos, count: np.sqrt(sos - sum**2 / (count - 1))
-    }
+        "loc": lambda sum, sos, count: sum,
+        "scale": lambda sum, sos, count: np.sqrt(sos - sum**2 / (count - 1)),
+    },
 )
 
 # Binomial
 register_distn(
-    name='binomial',
-    stats=OrderedDict([
-        ('sum', 'sum'),
-        ('count', 'count')
-    ]),
+    name="binomial",
+    stats=OrderedDict([("sum", "sum"), ("count", "count")]),
     scipy_class=scipy.stats.distributions.binom,
-    scipy_params={
-        'n': lambda sum, count: count,
-        'p': lambda sum, count: sum / count
-    }
+    scipy_params={"n": lambda sum, count: count, "p": lambda sum, count: sum / count},
 )

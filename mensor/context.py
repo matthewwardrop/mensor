@@ -4,10 +4,9 @@ from .constraints import Constraint, NullConstraint
 
 
 class EvaluationContext(object):
-
     @property
     def metrics(self):
-        if not hasattr(self, '_metrics'):
+        if not hasattr(self, "_metrics"):
             raise NotImplementedError
         return self._metrics
 
@@ -22,7 +21,7 @@ class EvaluationContext(object):
 
     @property
     def context(self):
-        return getattr(self, '_context', {})
+        return getattr(self, "_context", {})
 
     @context.setter
     def context(self, context):
@@ -30,7 +29,7 @@ class EvaluationContext(object):
 
     @property
     def constraints(self):
-        return getattr(self, '_constraints', NullConstraint())
+        return getattr(self, "_constraints", NullConstraint())
 
     @constraints.setter
     def constraints(self, constraints):
@@ -42,7 +41,11 @@ class EvaluationContext(object):
         else:
             f = self.metrics.evaluate
         return f(
-            *args, where=self.constraints & Constraint.from_spec(where), context=self.context, measure_opts={}, **kwargs
+            *args,
+            where=self.constraints & Constraint.from_spec(where),
+            context=self.context,
+            measure_opts={},
+            **kwargs
         )
 
     def evaluate_measures(self, *args, where=None, ir_only=False, **kwargs):
@@ -51,8 +54,13 @@ class EvaluationContext(object):
         else:
             f = self.measures.evaluate
         return f(
-            *args, where=self.constraints & Constraint.from_spec(where), context=self.context, **kwargs
+            *args,
+            where=self.constraints & Constraint.from_spec(where),
+            context=self.context,
+            **kwargs
         )
 
     def __repr__(self):
-        return "{}<contraints={}, context={}>".format(self.__class__.__name__, self.constraints, self.context)
+        return "{}<contraints={}, context={}>".format(
+            self.__class__.__name__, self.constraints, self.context
+        )

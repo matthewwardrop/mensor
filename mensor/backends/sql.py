@@ -23,13 +23,14 @@ class SQLDialect(object):
     COLUMN_PATTERN = re.compile(r"^[^0-9\W][\w/|:_.]*$")
 
     AGG_METHODS = {
-        'sum': lambda x: "SUM({})".format(x),
-        'mean': lambda x: "AVG({})".format(x),
-        'sos': lambda x: "SUM(POW({}, 2))".format(x),
-        'count': lambda x: "COUNT({})".format(x)
+        "sum": lambda x: "SUM({})".format(x),
+        "mean": lambda x: "AVG({})".format(x),
+        "sos": lambda x: "SUM(POW({}, 2))".format(x),
+        "count": lambda x: "COUNT({})".format(x),
     }
 
-    TEMPLATE_BASE = textwrap.dedent("""
+    TEMPLATE_BASE = textwrap.dedent(
+        """
         SELECT
             {%- for dimension in dimensions %}
             {% if loop.index0 > 0 %}, {% endif %}{{ dimension }}
@@ -60,9 +61,11 @@ class SQLDialect(object):
             {% if loop.index > 1 %},{% endif %} {{ gb }}
         {%- endfor %}
         {%- endif %}
-    """).strip()
+    """
+    ).strip()
 
-    TEMPLATE_TABLE = textwrap.dedent("""
+    TEMPLATE_TABLE = textwrap.dedent(
+        """
         SELECT
             {%- if not dimensions and not measures %}
             1
@@ -74,7 +77,8 @@ class SQLDialect(object):
             {% if loop.index0 > 0 or identifiers or dimensions %}, {% endif %}{{ measure.expr | col }} AS {{ measure.fieldname(role='measure') | col }}
             {%- endfor %}
         FROM {{table}}
-    """).strip()
+    """
+    ).strip()
 
     @classmethod
     def constraint_maps(cls):
@@ -86,24 +90,38 @@ class SQLDialect(object):
         """
         ve = cls.value_encode
         return {
-            CONSTRAINTS.AND: lambda w, f, m: '({})'.format(' AND '.join(m(f, o) for o in w.operands)),
-            CONSTRAINTS.OR: lambda w, f, m: '({})'.format(' OR '.join(m(f, o) for o in w.operands)),
-            CONSTRAINTS.EQUALITY: lambda w, f, m: "{} = {}".format(f['dimensions'].get(w.field) or f['measures'][w.field], ve(w.value)),
-            CONSTRAINTS.INEQUALITY_GT: lambda w, f, m: "{} > {}".format(f['dimensions'].get(w.field) or f['measures'][w.field], ve(w.value)),
-            CONSTRAINTS.INEQUALITY_GTE: lambda w, f, m: "{} >= {}".format(f['dimensions'].get(w.field) or f['measures'][w.field], ve(w.value)),
-            CONSTRAINTS.INEQUALITY_LT: lambda w, f, m: "{} < {}".format(f['dimensions'].get(w.field) or f['measures'][w.field], ve(w.value)),
-            CONSTRAINTS.INEQUALITY_LTE: lambda w, f, m: "{} <= {}".format(f['dimensions'].get(w.field) or f['measures'][w.field], ve(w.value)),
-            CONSTRAINTS.IN: lambda w, f, m: "{} IN ({})".format(f['dimensions'].get(w.field) or f['measures'][w.field], ", ".join(ve(v) for v in w.value)),
+            CONSTRAINTS.AND: lambda w, f, m: "({})".format(
+                " AND ".join(m(f, o) for o in w.operands)
+            ),
+            CONSTRAINTS.OR: lambda w, f, m: "({})".format(
+                " OR ".join(m(f, o) for o in w.operands)
+            ),
+            CONSTRAINTS.EQUALITY: lambda w, f, m: "{} = {}".format(
+                f["dimensions"].get(w.field) or f["measures"][w.field], ve(w.value)
+            ),
+            CONSTRAINTS.INEQUALITY_GT: lambda w, f, m: "{} > {}".format(
+                f["dimensions"].get(w.field) or f["measures"][w.field], ve(w.value)
+            ),
+            CONSTRAINTS.INEQUALITY_GTE: lambda w, f, m: "{} >= {}".format(
+                f["dimensions"].get(w.field) or f["measures"][w.field], ve(w.value)
+            ),
+            CONSTRAINTS.INEQUALITY_LT: lambda w, f, m: "{} < {}".format(
+                f["dimensions"].get(w.field) or f["measures"][w.field], ve(w.value)
+            ),
+            CONSTRAINTS.INEQUALITY_LTE: lambda w, f, m: "{} <= {}".format(
+                f["dimensions"].get(w.field) or f["measures"][w.field], ve(w.value)
+            ),
+            CONSTRAINTS.IN: lambda w, f, m: "{} IN ({})".format(
+                f["dimensions"].get(w.field) or f["measures"][w.field],
+                ", ".join(ve(v) for v in w.value),
+            ),
         }
 
     # SQL rendering helpers
     @classmethod
     def column_encode(cls, column_expr):
         if cls.COLUMN_PATTERN.match(column_expr):
-            return '{quote}{col}{quote}'.format(
-                quote=cls.QUOTE_COL,
-                col=column_expr
-            )
+            return "{quote}{col}{quote}".format(quote=cls.QUOTE_COL, col=column_expr)
         return column_expr
 
     @classmethod
@@ -114,12 +132,18 @@ class SQLDialect(object):
     def value_encode(cls, value):
         "This method quotes values appropriately."
         if isinstance(value, str):
-            return '{quote}{value}{quote}'.format(quote=cls.QUOTE_STR, value=value)  # TODO: escape quotes in string
+            return "{quote}{value}{quote}".format(
+                quote=cls.QUOTE_STR, value=value
+            )  # TODO: escape quotes in string
         elif isinstance(value, numbers.Number):
             return str(value)
         elif value is None:
-            return 'NULL'
-        raise ValueError("SQL dialect `{}` does not support quoting objects of type: `{}`".format(cls, type(value)))
+            return "NULL"
+        raise ValueError(
+            "SQL dialect `{}` does not support quoting objects of type: `{}`".format(
+                cls, type(value)
+            )
+        )
 
     # TODO?
     # @classmethod
@@ -131,14 +155,13 @@ class SQLDialect(object):
         if cls.COLUMN_PATTERN.match(column_expr):
             column = "{source}.{column}".format(
                 source=cls.column_encode(source_name),
-                column=cls.column_encode(column_expr)
+                column=cls.column_encode(column_expr),
             )
         else:
             column = cls.column_encode(column_expr)
         if default is not None:
             column = "COALESCE({column}, {default})".format(
-                column=column,
-                default=cls.value_encode(default)
+                column=column, default=cls.value_encode(default)
             )
         return column
 
@@ -149,22 +172,26 @@ class PrestoDialect(SQLDialect):
 
 class HiveDialect(SQLDialect):
 
-    QUOTE_COL = '`'
+    QUOTE_COL = "`"
 
     @classmethod
     def column_encode(cls, column_expr):
         if cls.COLUMN_PATTERN.match(column_expr):
-            return SQLDialect.column_encode(cls, column_expr).replace(':', '+').replace('/', '-')
+            return (
+                SQLDialect.column_encode(cls, column_expr)
+                .replace(":", "+")
+                .replace("/", "-")
+            )
         return SQLDialect.column_encode(cls, column_expr)
 
     @classmethod
     def column_decode(cls, column_name):
-        return column_name.replace('+', ':').replace('+', '/')
+        return column_name.replace("+", ":").replace("+", "/")
 
 
 DIALECTS = {
-    'presto': PrestoDialect,
-    'hive': HiveDialect,
+    "presto": PrestoDialect,
+    "hive": HiveDialect,
 }
 
 
@@ -182,11 +209,11 @@ class SQLExecutor(metaclass=SubclassRegisteringABCMeta):
 
 class DebugSQLExecutor(SQLExecutor):
 
-    REGISTRY_KEYS = ['debug']
+    REGISTRY_KEYS = ["debug"]
 
     @property
     def dialect(self):
-        return 'presto'
+        return "presto"
 
     def query(self, sql):
         print(sql)
@@ -195,16 +222,22 @@ class DebugSQLExecutor(SQLExecutor):
 
 class SQLMeasureProvider(MutableMeasureProvider):
 
-    REGISTRY_KEYS = ['sql']
+    REGISTRY_KEYS = ["sql"]
     COLUMN_EXPR_PREAPPLIED = False
 
     @classmethod
     def _on_registered(cls, key):
-        for agg in ['sum', 'mean', 'sos', 'count']:
+        for agg in ["sum", "mean", "sos", "count"]:
             global_stats_registry.aggregations.register(
                 name=agg,
                 backend=key,
-                agg=eval("lambda field, dialect: dialect.AGG_METHODS['{}'](field)".format(agg), {}, {})
+                agg=eval(
+                    "lambda field, dialect: dialect.AGG_METHODS['{}'](field)".format(
+                        agg
+                    ),
+                    {},
+                    {},
+                ),
             )
 
     def __init__(self, *args, sql=None, executor=None, **kwargs):
@@ -221,19 +254,32 @@ class SQLMeasureProvider(MutableMeasureProvider):
         self.executor = executor
         self.dialect = DIALECTS[executor.dialect]
 
-        self.add_measure('count', shared=True, distribution='count', default=0)
+        self.add_measure("count", shared=True, distribution="count", default=0)
 
-        self._template_environment = jinja2.Environment(loader=jinja2.FunctionLoader(lambda x: x), undefined=jinja2.StrictUndefined)
-        self._template_environment.filters.update({
-            'col': self._col,
-            'val': self._val
-        })
+        self._template_environment = jinja2.Environment(
+            loader=jinja2.FunctionLoader(lambda x: x), undefined=jinja2.StrictUndefined
+        )
+        self._template_environment.filters.update({"col": self._col, "val": self._val})
 
-    def _sql(self, unit_type, measures, segment_by, where, joins, stats, covariates, context, **opts):
-        assert all(self.is_compatible_with(es.provider) and es.joins_all_compatible for es in self.provisions.values())
+    def _sql(
+        self,
+        unit_type,
+        measures,
+        segment_by,
+        where,
+        joins,
+        stats,
+        covariates,
+        context,
+        **opts
+    ):
+        assert all(
+            self.is_compatible_with(es.provider) and es.joins_all_compatible
+            for es in self.provisions.values()
+        )
         assert self._base_sql is not None, (
-            '{} must be instantiated with sql if it is to be evaluated '
-            'or its internal representation rendered'.format(self)
+            "{} must be instantiated with sql if it is to be evaluated "
+            "or its internal representation rendered".format(self)
         )
         return self._template_environment.get_template(self._base_sql).render(
             **context,
@@ -243,40 +289,84 @@ class SQLMeasureProvider(MutableMeasureProvider):
             }
         )
 
-    def _evaluate(self, unit_type, measures, segment_by, where, joins, stats,
-                  covariates, context, stats_registry, **opts):
-        df = self.executor.query(self.get_sql(
-            unit_type,
-            measures=measures,
-            segment_by=segment_by,
-            where=where,
-            joins=joins,
-            stats_registry=stats_registry,
-            stats=stats,
-            covariates=covariates,
-            context=context,
-            **opts
-        ))
+    def _evaluate(
+        self,
+        unit_type,
+        measures,
+        segment_by,
+        where,
+        joins,
+        stats,
+        covariates,
+        context,
+        stats_registry,
+        **opts
+    ):
+        df = self.executor.query(
+            self.get_sql(
+                unit_type,
+                measures=measures,
+                segment_by=segment_by,
+                where=where,
+                joins=joins,
+                stats_registry=stats_registry,
+                stats=stats,
+                covariates=covariates,
+                context=context,
+                **opts
+            )
+        )
         df.columns = [self.dialect.column_decode(col) for col in df.columns]
         return df
 
     def get_sql(self, *args, **kwargs):
         return self.get_ir(*args, **kwargs)
 
-    def _get_ir(self, unit_type, measures, segment_by, where, joins, stats,
-                covariates, context, stats_registry, **opts):
+    def _get_ir(
+        self,
+        unit_type,
+        measures,
+        segment_by,
+        where,
+        joins,
+        stats,
+        covariates,
+        context,
+        stats_registry,
+        **opts
+    ):
         field_map = self._field_map(unit_type, measures, segment_by, where, joins)
         rebase_agg = not unit_type.is_unique
-        sql = self._template_environment.get_template(self.dialect.TEMPLATE_BASE).render(
-            _sql=self._sql(unit_type=unit_type, measures=measures, segment_by=segment_by, where=where, joins=joins, stats=stats, covariates=covariates, context=context, **opts),
+        sql = self._template_environment.get_template(
+            self.dialect.TEMPLATE_BASE
+        ).render(
+            _sql=self._sql(
+                unit_type=unit_type,
+                measures=measures,
+                segment_by=segment_by,
+                where=where,
+                joins=joins,
+                stats=stats,
+                covariates=covariates,
+                context=context,
+                **opts
+            ),
             field_map=field_map,
             provider=self,
             table_name=self._table_name(unit_type),
             dimensions=self._get_dimensions_sql(field_map, segment_by),
-            measures=self._get_measures_sql(field_map, unit_type, measures, rebase_agg, stats_registry, stats, covariates),
+            measures=self._get_measures_sql(
+                field_map,
+                unit_type,
+                measures,
+                rebase_agg,
+                stats_registry,
+                stats,
+                covariates,
+            ),
             groupby=self._get_groupby_sql(field_map, segment_by),
             joins=joins,
-            constraints=self._get_where_sql(field_map, where)
+            constraints=self._get_where_sql(field_map, where),
         )
         return sql
 
@@ -291,35 +381,61 @@ class SQLMeasureProvider(MutableMeasureProvider):
         return self.dialect.value_encode(value)
 
     def _field_map(self, unit_type, measures, dimensions, where, joins):
-        field_map = {'measures': {}, 'dimensions': {}}
+        field_map = {"measures": {}, "dimensions": {}}
 
         self_table_name = self._table_name(unit_type)
 
         for measure in measures:
             if not measure.external:
-                if measure.via_name in field_map['measures']:
+                if measure.via_name in field_map["measures"]:
                     raise ValueError(measure.via_name)
-                field_map['measures'][measure.via_name] = self.dialect.source_column_encode(self_table_name, measure.fieldname(role='measure') if self.COLUMN_EXPR_PREAPPLIED else measure.expr, measure.default)
+                field_map["measures"][
+                    measure.via_name
+                ] = self.dialect.source_column_encode(
+                    self_table_name,
+                    measure.fieldname(role="measure")
+                    if self.COLUMN_EXPR_PREAPPLIED
+                    else measure.expr,
+                    measure.default,
+                )
 
         for dimension in dimensions:
             if not dimension.external:
-                if dimension.via_name in field_map['dimensions']:
+                if dimension.via_name in field_map["dimensions"]:
                     raise ValueError(dimension.via_name)
-                field_map['dimensions'][dimension.via_name] = self.dialect.source_column_encode(self_table_name, dimension.fieldname(role='dimension') if self.COLUMN_EXPR_PREAPPLIED else dimension.expr, dimension.default)
+                field_map["dimensions"][
+                    dimension.via_name
+                ] = self.dialect.source_column_encode(
+                    self_table_name,
+                    dimension.fieldname(role="dimension")
+                    if self.COLUMN_EXPR_PREAPPLIED
+                    else dimension.expr,
+                    dimension.default,
+                )
 
         for join in joins:
             for measure in join.measures:
-                if measure.as_via(join.join_prefix) in measures and measures[measure.as_via(join.join_prefix)].external:
+                if (
+                    measure.as_via(join.join_prefix) in measures
+                    and measures[measure.as_via(join.join_prefix)].external
+                ):
                     map_name = measure.as_via(join.join_prefix).via_name
                 else:
-                    map_name = '/'.join([join.name, measure.via_name])
-                field_map['measures'][map_name] = self.dialect.source_column_encode(join.name, measure.fieldname(role='measure'), measure.default)
+                    map_name = "/".join([join.name, measure.via_name])
+                field_map["measures"][map_name] = self.dialect.source_column_encode(
+                    join.name, measure.fieldname(role="measure"), measure.default
+                )
             for dimension in join.dimensions:
-                if dimension.as_via(join.join_prefix) in dimensions and dimensions[dimension.as_via(join.join_prefix)].external:
+                if (
+                    dimension.as_via(join.join_prefix) in dimensions
+                    and dimensions[dimension.as_via(join.join_prefix)].external
+                ):
                     map_name = dimension.as_via(join.join_prefix).via_name
                 else:
-                    map_name = '/'.join([join.name, dimension.via_name])
-                field_map['dimensions'][map_name] = self.dialect.source_column_encode(join.name, dimension.fieldname(role='dimension'), dimension.default)
+                    map_name = "/".join([join.name, dimension.via_name])
+                field_map["dimensions"][map_name] = self.dialect.source_column_encode(
+                    join.name, dimension.fieldname(role="dimension"), dimension.default
+                )
 
         return field_map
 
@@ -328,33 +444,53 @@ class SQLMeasureProvider(MutableMeasureProvider):
         for dimension in dimensions:
             if not dimension.private:
                 dims.append(
-                    '{} AS {}'.format(
-                        field_map['dimensions'][dimension.via_name],
-                        self._col(dimension.via_name)
+                    "{} AS {}".format(
+                        field_map["dimensions"][dimension.via_name],
+                        self._col(dimension.via_name),
                     )
                 )
         return dims
 
-    def _get_measures_sql(self, field_map, unit_type, measures, rebase_agg, stats_registry, stats, covariates):
+    def _get_measures_sql(
+        self,
+        field_map,
+        unit_type,
+        measures,
+        rebase_agg,
+        stats_registry,
+        stats,
+        covariates,
+    ):
         aggs = []
 
         if rebase_agg and stats:
-            raise NotImplementedError("Computing stats and rebasing units simultaneously has not been implemented for the SQL backend.")
+            raise NotImplementedError(
+                "Computing stats and rebasing units simultaneously has not been implemented for the SQL backend."
+            )
 
         for measure in measures:
             if measure.private:
                 continue
-            for fieldname, transforms in measure.get_fields(unit_type=unit_type, stats=stats, stats_registry=stats_registry, rebase_agg=rebase_agg).items():
+            for fieldname, transforms in measure.get_fields(
+                unit_type=unit_type,
+                stats=stats,
+                stats_registry=stats_registry,
+                rebase_agg=rebase_agg,
+            ).items():
 
-                field = '1' if measure == 'count' else field_map['measures'][measure.via_name]
-                if transforms.get('pre_agg'):
-                    field = transforms['pre_agg'](field, self.dialect)
-                field = transforms['agg'](field, self.dialect)
-                if transforms.get('post_agg'):
-                    field = transforms['post_agg'](field, self.dialect)
+                field = (
+                    "1"
+                    if measure == "count"
+                    else field_map["measures"][measure.via_name]
+                )
+                if transforms.get("pre_agg"):
+                    field = transforms["pre_agg"](field, self.dialect)
+                field = transforms["agg"](field, self.dialect)
+                if transforms.get("post_agg"):
+                    field = transforms["post_agg"](field, self.dialect)
 
                 aggs.append(
-                    '{col_op} AS {f}'.format(
+                    "{col_op} AS {f}".format(
                         col_op=field,
                         f=self._col(fieldname),
                     )
@@ -363,11 +499,17 @@ class SQLMeasureProvider(MutableMeasureProvider):
         return aggs
 
     def _get_groupby_sql(self, field_map, dimensions):
-        return [field_map['dimensions'][dimension.via_name] for dimension in dimensions if not dimension.private]
+        return [
+            field_map["dimensions"][dimension.via_name]
+            for dimension in dimensions
+            if not dimension.private
+        ]
 
     def _get_where_sql(self, field_map, where):
         if where:
-            return self._constraint_map(where.kind)(where, field_map, self._get_where_sql)
+            return self._constraint_map(where.kind)(
+                where, field_map, self._get_where_sql
+            )
 
     @property
     def _constraint_maps(self):
@@ -379,23 +521,47 @@ class SQLMeasureProvider(MutableMeasureProvider):
 
 class SQLTableMeasureProvider(SQLMeasureProvider):
 
-    REGISTRY_KEYS = ['sql_table']
+    REGISTRY_KEYS = ["sql_table"]
     COLUMN_EXPR_PREAPPLIED = True
 
-    def _sql(self, unit_type, measures, segment_by, where, joins, stats, covariates, context, **opts):
+    def _sql(
+        self,
+        unit_type,
+        measures,
+        segment_by,
+        where,
+        joins,
+        stats,
+        covariates,
+        context,
+        **opts
+    ):
         if len(self.identifiers) + len(self.dimensions) + len(self.measures) == 0:
             raise RuntimeError("No columns identified in table.")
-        return self._template_environment.get_template(self.dialect.TEMPLATE_TABLE).render(
-            table=SQLMeasureProvider._sql(self, unit_type, measures, segment_by, where, joins, stats, covariates, context, **opts),
+        return self._template_environment.get_template(
+            self.dialect.TEMPLATE_TABLE
+        ).render(
+            table=SQLMeasureProvider._sql(
+                self,
+                unit_type,
+                measures,
+                segment_by,
+                where,
+                joins,
+                stats,
+                covariates,
+                context,
+                **opts
+            ),
             identifiers=None,
-            measures=[m for m in measures if m != 'count' and not m.external],
+            measures=[m for m in measures if m != "count" and not m.external],
             dimensions=[d for d in segment_by if not d.external],
         )
 
 
 class SQLMetricImplementation(MetricImplementation):
 
-    REGISTRY_KEYS = ['sql']
+    REGISTRY_KEYS = ["sql"]
 
     def __init__(self, sql, post_stats=True):
         self._sql = textwrap.dedent(sql) if sql else sql
@@ -406,10 +572,18 @@ class SQLMetricImplementation(MetricImplementation):
         return self._sql
 
     def is_compatible_with_strategy(self, strategy):
-        return isinstance(strategy.provider, SQLMeasureProvider) and strategy.joins_all_compatible
+        return (
+            isinstance(strategy.provider, SQLMeasureProvider)
+            and strategy.joins_all_compatible
+        )
 
     def evaluate(self, strategy, marginalise=None, compatible_metrics=None, **opts):
-        ir = self.get_ir(strategy, marginalise=marginalise, compatible_metrics=compatible_metrics, **opts)
+        ir = self.get_ir(
+            strategy,
+            marginalise=marginalise,
+            compatible_metrics=compatible_metrics,
+            **opts
+        )
         return strategy.provider.executor.query(ir)
 
     def get_ir(self, strategy, marginalise=None, compatible_metrics=None, **opts):
@@ -417,14 +591,16 @@ class SQLMetricImplementation(MetricImplementation):
             measures=[m for m in strategy.measures if not m.private],
             segment_by=[d for d in strategy.segment_by if not d.private],
             marginalise=marginalise or [],
-            provision=strategy.execute(ir_only=True, stats=self.post_stats, **opts.pop('measure_opts', {})),
+            provision=strategy.execute(
+                ir_only=True, stats=self.post_stats, **opts.pop("measure_opts", {})
+            ),
             **opts
         )
 
 
 class SimpleSQLMetricImplementation(SQLMetricImplementation):
 
-    REGISTRY_KEYS = ['sql_simple']
+    REGISTRY_KEYS = ["sql_simple"]
 
     TEMPLATE = """
         SELECT
@@ -449,11 +625,15 @@ class SimpleSQLMetricImplementation(SQLMetricImplementation):
     def get_ir(self, strategy, marginalise=None, compatible_metrics=None, **opts):
         metrics = self.metrics_callback(strategy=strategy, **opts)
 
-        for metric in (compatible_metrics or []):
+        for metric in compatible_metrics or []:
             impl = metric.implementation_for_strategy(strategy)
-            metrics.extend(impl.metrics_callback(strategy=strategy, **impl.metric.opts.process()))
+            metrics.extend(
+                impl.metrics_callback(strategy=strategy, **impl.metric.opts.process())
+            )
 
-        return SQLMetricImplementation.get_ir(self, strategy, marginalise=marginalise, metrics=metrics, **opts)
+        return SQLMetricImplementation.get_ir(
+            self, strategy, marginalise=marginalise, metrics=metrics, **opts
+        )
 
     def is_compatible_with_metric(self, metric):
         if isinstance(metric, self.__class__):

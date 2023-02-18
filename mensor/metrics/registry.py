@@ -10,7 +10,6 @@ from .types import Metric
 
 
 class MetricRegistry(object):
-
     def __init__(self, measure_registry=None):
         self.measures = measure_registry or MetaMeasureProvider()
         self._metrics = {}
@@ -20,12 +19,14 @@ class MetricRegistry(object):
         self._metrics[metric.name] = metric
 
     def register_from_yaml(self, path_or_yaml):
-        if '\n' in path_or_yaml or not os.path.isdir(os.path.expanduser(path_or_yaml)):
+        if "\n" in path_or_yaml or not os.path.isdir(os.path.expanduser(path_or_yaml)):
             return self.register(Metric.from_yaml(path_or_yaml))
         else:
-            for dirpath, dirnames, filenames in os.walk(os.path.expanduser(path_or_yaml)):
+            for dirpath, dirnames, filenames in os.walk(
+                os.path.expanduser(path_or_yaml)
+            ):
                 for filename in filenames:
-                    if filename.endswith('.yml'):
+                    if filename.endswith(".yml"):
                         try:
                             provider = Metric.from_yaml(os.path.join(dirpath, filename))
                             self.register(provider)
@@ -58,15 +59,31 @@ class MetricRegistry(object):
         if not isinstance(segment_by, list):
             segment_by = [segment_by]
 
-        for strategy, required_marginal_segmentation, metrics in self._group_metric_evaluations(metrics=metrics, segment_by=segment_by, where=where, context=context):
-            result = metrics[0].evaluate(strategy, required_marginal_segmentation, compatible_metrics=metrics[1:], context=context, **opts)
+        for (
+            strategy,
+            required_marginal_segmentation,
+            metrics,
+        ) in self._group_metric_evaluations(
+            metrics=metrics, segment_by=segment_by, where=where, context=context
+        ):
+            result = metrics[0].evaluate(
+                strategy,
+                required_marginal_segmentation,
+                compatible_metrics=metrics[1:],
+                context=context,
+                **opts
+            )
 
-            result = EvaluatedMeasures.for_measures(result, stats_registry=self.measures._stats_registry)
+            result = EvaluatedMeasures.for_measures(
+                result, stats_registry=self.measures._stats_registry
+            )
 
             results.append(result)
 
         if len(segment_by):
-            return pd.concat([result.raw.set_index(segment_by) for result in results], axis=1)
+            return pd.concat(
+                [result.raw.set_index(segment_by) for result in results], axis=1
+            )
         else:
             return pd.concat([result.raw for result in results], axis=1)
 
@@ -79,14 +96,29 @@ class MetricRegistry(object):
         if not isinstance(segment_by, list):
             segment_by = [segment_by]
 
-        for strategy, required_marginal_segmentation, metrics in self._group_metric_evaluations(metrics=metrics, segment_by=segment_by, where=where):
-            yield metrics, metrics[0].get_ir(strategy, required_marginal_segmentation, compatible_metrics=metrics[1:], **opts)
+        for (
+            strategy,
+            required_marginal_segmentation,
+            metrics,
+        ) in self._group_metric_evaluations(
+            metrics=metrics, segment_by=segment_by, where=where
+        ):
+            yield metrics, metrics[0].get_ir(
+                strategy,
+                required_marginal_segmentation,
+                compatible_metrics=metrics[1:],
+                **opts
+            )
 
     def _get_strategy_for_metric(self, metric, segment_by, where, context):
         measures = metric.required_measures
         if metric.required_segmentation:
-            segment_by = segment_by + list(set(metric.required_segmentation).difference(segment_by))
-        required_marginal_segmentation = list(set(metric.required_marginal_segmentation or []).difference(segment_by))
+            segment_by = segment_by + list(
+                set(metric.required_segmentation).difference(segment_by)
+            )
+        required_marginal_segmentation = list(
+            set(metric.required_marginal_segmentation or []).difference(segment_by)
+        )
         segment_by = segment_by + required_marginal_segmentation
 
         if metric.required_constraints:
@@ -101,17 +133,27 @@ class MetricRegistry(object):
             measures=measures,
             segment_by=segment_by,
             where=where,
-            context=context
+            context=context,
         )
 
     def _group_metric_evaluations(self, metrics, segment_by, where, context, **opts):
 
-        metrics = [self._metrics[metric] if not isinstance(metric, Metric) else metric for metric in metrics]
-        strategies = {metric: self._get_strategy_for_metric(metric, segment_by, where, context, **opts) for metric in metrics}
+        metrics = [
+            self._metrics[metric] if not isinstance(metric, Metric) else metric
+            for metric in metrics
+        ]
+        strategies = {
+            metric: self._get_strategy_for_metric(
+                metric, segment_by, where, context, **opts
+            )
+            for metric in metrics
+        }
 
         for metric in metrics:
             strategy = strategies[metric]
-            required_marginal_segmentation = set(strategy.segment_by).difference(segment_by)
+            required_marginal_segmentation = set(strategy.segment_by).difference(
+                segment_by
+            )
             yield strategy, required_marginal_segmentation, [metric]
 
         # TODO: Generalise grouping correctly. The following is incorrect due to
@@ -194,4 +236,9 @@ class MetricRegistry(object):
                 if detailed:
                     metric.show()
                 else:
-                    print(" - {name} [{unit_type}]".format(name=name, unit_type=metric.unit_type) + (": {}".format(metric.desc) if metric.desc else ""))
+                    print(
+                        " - {name} [{unit_type}]".format(
+                            name=name, unit_type=metric.unit_type
+                        )
+                        + (": {}".format(metric.desc) if metric.desc else "")
+                    )

@@ -19,7 +19,8 @@
 #
 import os
 import sys
-sys.path.insert(0, os.path.abspath('..'))
+
+sys.path.insert(0, os.path.abspath(".."))
 
 import mensor
 
@@ -33,12 +34,14 @@ import mensor
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = ['sphinx.ext.autodoc',
-    'sphinx.ext.todo',
-    'sphinx.ext.coverage',
-    'sphinx.ext.mathjax',
-    'sphinx.ext.viewcode',
-    'sphinx.ext.napoleon']
+extensions = [
+    "sphinx.ext.autodoc",
+    "sphinx.ext.todo",
+    "sphinx.ext.coverage",
+    "sphinx.ext.mathjax",
+    "sphinx.ext.viewcode",
+    "sphinx.ext.napoleon",
+]
 
 napoleon_use_ivar = True
 
@@ -48,42 +51,52 @@ from sphinx.ext.napoleon.docstring import GoogleDocstring
 
 # first, we define new methods for any new sections and add them to the class
 def parse_keys_section(self, section):
-    return self._format_fields('Keys', self._consume_fields())
+    return self._format_fields("Keys", self._consume_fields())
+
+
 GoogleDocstring._parse_keys_section = parse_keys_section
 
+
 def parse_attributes_section(self, section):
-    return self._format_fields('Attributes', self._consume_fields())
+    return self._format_fields("Attributes", self._consume_fields())
+
+
 GoogleDocstring._parse_attributes_section = parse_attributes_section
 
+
 def parse_class_attributes_section(self, section):
-    return self._format_fields('Class Attributes', self._consume_fields())
+    return self._format_fields("Class Attributes", self._consume_fields())
+
+
 GoogleDocstring._parse_class_attributes_section = parse_class_attributes_section
 
 
 # we now patch the parse method to guarantee that the the above methods are
 # assigned to the _section dict
 def patched_parse(self):
-    self._sections['keys'] = self._parse_keys_section
-    self._sections['class attributes'] = self._parse_class_attributes_section
+    self._sections["keys"] = self._parse_keys_section
+    self._sections["class attributes"] = self._parse_class_attributes_section
     self._unpatched_parse()
+
+
 GoogleDocstring._unpatched_parse = GoogleDocstring._parse
 GoogleDocstring._parse = patched_parse
 
 # Add any paths that contain templates here, relative to this directory.
-templates_path = ['_templates']
+templates_path = ["_templates"]
 
 # The suffix(es) of source filenames.
 # You can specify multiple suffix as a list of string:
 #
 # source_suffix = ['.rst', '.md']
-source_suffix = '.rst'
+source_suffix = ".rst"
 
 # The master toctree document.
-master_doc = 'index'
+master_doc = "index"
 
 # General information about the project.
-project = 'Mensor'
-copyright = 'Airbnb and contributors'
+project = "Mensor"
+copyright = "Airbnb and contributors"
 author = mensor.__author__
 
 # The version info for the project you're documenting, acts as replacement for
@@ -91,7 +104,7 @@ author = mensor.__author__
 # built documents.
 #
 # The short X.Y version.
-version = 'v{}'.format(mensor.__version__)
+version = "v{}".format(mensor.__version__)
 # The full version, including alpha/beta/rc tags.
 release = version
 
@@ -105,10 +118,10 @@ language = None
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This patterns also effect to html_static_path and html_extra_path
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 # The name of the Pygments (syntax highlighting) style to use.
-pygments_style = 'sphinx'
+pygments_style = "sphinx"
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
 todo_include_todos = True
@@ -130,7 +143,7 @@ html_theme = "sphinx_rtd_theme"
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ['_static']
+html_static_path = ["_static"]
 
 # Custom sidebar templates, must be a dictionary that maps document names
 # to template names.
@@ -138,12 +151,12 @@ html_static_path = ['_static']
 # This is required for the alabaster theme
 # refs: http://alabaster.readthedocs.io/en/latest/installation.html#sidebars
 html_sidebars = {
-    '**': [
-        'about.html',
-        'navigation.html',
-        'relations.html',  # needs 'show_related': True theme option to display
-        'searchbox.html',
-        'donate.html',
+    "**": [
+        "about.html",
+        "navigation.html",
+        "relations.html",  # needs 'show_related': True theme option to display
+        "searchbox.html",
+        "donate.html",
     ]
 }
 
@@ -151,7 +164,7 @@ html_sidebars = {
 # -- Options for HTMLHelp output ------------------------------------------
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'Mensordoc'
+htmlhelp_basename = "Mensordoc"
 
 
 # -- Options for LaTeX output ---------------------------------------------
@@ -160,15 +173,12 @@ latex_elements = {
     # The paper size ('letterpaper' or 'a4paper').
     #
     # 'papersize': 'letterpaper',
-
     # The font size ('10pt', '11pt' or '12pt').
     #
     # 'pointsize': '10pt',
-
     # Additional stuff for the LaTeX preamble.
     #
     # 'preamble': '',
-
     # Latex figure (float) alignment
     #
     # 'figure_align': 'htbp',
@@ -178,8 +188,7 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, 'Mensor.tex', 'Mensor Documentation',
-     'Matthew Wardrop', 'manual'),
+    (master_doc, "Mensor.tex", "Mensor Documentation", "Matthew Wardrop", "manual"),
 ]
 
 
@@ -187,10 +196,7 @@ latex_documents = [
 
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
-man_pages = [
-    (master_doc, 'mensor', 'Mensor Documentation',
-     [author], 1)
-]
+man_pages = [(master_doc, "mensor", "Mensor Documentation", [author], 1)]
 
 
 # -- Options for Texinfo output -------------------------------------------
@@ -199,7 +205,13 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    (master_doc, 'Mensor', 'Mensor Documentation',
-     author, 'Mensor', 'One line description of project.',
-     'Miscellaneous'),
+    (
+        master_doc,
+        "Mensor",
+        "Mensor Documentation",
+        author,
+        "Mensor",
+        "One line description of project.",
+        "Miscellaneous",
+    ),
 ]

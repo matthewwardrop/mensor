@@ -3,7 +3,15 @@ import yaml
 
 class FeatureSpec:
 
-    ALLOWED_TRANSFORMS = ['pre_agg', 'agg', 'post_agg', 'pre_rebase_agg', 'rebase_agg', 'post_rebase_agg', 'alias']
+    ALLOWED_TRANSFORMS = [
+        "pre_agg",
+        "agg",
+        "post_agg",
+        "pre_rebase_agg",
+        "rebase_agg",
+        "post_rebase_agg",
+        "alias",
+    ]
 
     def __init__(self, alias, source=None, transforms=None):
         self._alias = alias
@@ -11,13 +19,28 @@ class FeatureSpec:
         self._transforms = transforms or {}
 
     def __repr__(self):
-        return "<Measure" + ("[{alias}]".format(alias=self._alias) if self._alias else "") + (" (with transforms)" if self._transforms else "") + ">"
+        return (
+            "<Measure"
+            + ("[{alias}]".format(alias=self._alias) if self._alias else "")
+            + (" (with transforms)" if self._transforms else "")
+            + ">"
+        )
 
     def source(self, source):
         self._source = source
         return self
 
-    def with_transforms(self, unit_type, pre_agg=None, agg=None, post_agg=None, pre_rebase_agg=None, rebase_agg=None, post_rebase_agg=None, alias=None):
+    def with_transforms(
+        self,
+        unit_type,
+        pre_agg=None,
+        agg=None,
+        post_agg=None,
+        pre_rebase_agg=None,
+        rebase_agg=None,
+        post_rebase_agg=None,
+        alias=None,
+    ):
         variables = locals()
         transforms = {
             name: variables[name]
@@ -29,12 +52,10 @@ class FeatureSpec:
         return self
 
     def get_attrs(self, unit_type):
-        attrs = {
-            'transforms': self._transforms
-        }
-        if unit_type not in attrs['transforms']:
-            attrs['transforms'][unit_type] = {}
-        attrs['transforms'][unit_type]['alias'] = self._alias
+        attrs = {"transforms": self._transforms}
+        if unit_type not in attrs["transforms"]:
+            attrs["transforms"][unit_type] = {}
+        attrs["transforms"][unit_type]["alias"] = self._alias
         return attrs
 
     def as_source_with_props(self, unit_type):
@@ -43,9 +64,9 @@ class FeatureSpec:
     @property
     def as_dict(self):
         return {
-            'source': self._source,
-            'alias': self._alias,
-            'transforms': self._transforms
+            "source": self._source,
+            "alias": self._alias,
+            "transforms": self._transforms,
         }
 
     @property
@@ -55,9 +76,17 @@ class FeatureSpec:
 
 class MeasureSpec(FeatureSpec):
 
-    ALLOWED_TRANSFORMS = ['pre_agg', 'agg', 'post_agg', 'pre_rebase_agg', 'rebase_agg', 'post_rebase_agg', 'alias']
+    ALLOWED_TRANSFORMS = [
+        "pre_agg",
+        "agg",
+        "post_agg",
+        "pre_rebase_agg",
+        "rebase_agg",
+        "post_rebase_agg",
+        "alias",
+    ]
 
 
 class DimensionSpec(FeatureSpec):
 
-    ALLOWED_TRANSFORMS = ['pre_agg', 'pre_rebase_agg', 'alias']
+    ALLOWED_TRANSFORMS = ["pre_agg", "pre_rebase_agg", "alias"]

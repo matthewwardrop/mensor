@@ -15,7 +15,7 @@ class Metric(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
 
     @classmethod
     def from_yaml(cls, yml):
-        if '\n' not in yml:
+        if "\n" not in yml:
             with open(os.path.expanduser(yml)) as f:
                 return cls.from_dict(yaml.load(f))
         else:
@@ -23,14 +23,14 @@ class Metric(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
 
     @classmethod
     def from_dict(cls, d):
-        assert 'kind' in d
-        assert d.get('role') in (None, 'metric')
-        klass = cls.for_kind(d['kind'])
+        assert "kind" in d
+        assert d.get("role") in (None, "metric")
+        klass = cls.for_kind(d["kind"])
         instance = klass(
-            name=d.get('name'),
-            unit_type=d.get('unit_type'),
-            desc=d.get('desc'),
-            **d.get('opts')
+            name=d.get("name"),
+            unit_type=d.get("unit_type"),
+            desc=d.get("desc"),
+            **d.get("opts")
         )
         return instance
 
@@ -41,9 +41,18 @@ class Metric(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
 
         self._implementations = []
 
-        self.opts.add_option('name', 'The name of the metric', False, default=name)
-        self.opts.add_option('measure_opts', 'Additional options to pass through to measures.', False, default={})
-        self.opts.add_option('implementation', "The implementation to use to evaluate the metrics.", False)
+        self.opts.add_option("name", "The name of the metric", False, default=name)
+        self.opts.add_option(
+            "measure_opts",
+            "Additional options to pass through to measures.",
+            False,
+            default={},
+        )
+        self.opts.add_option(
+            "implementation",
+            "The implementation to use to evaluate the metrics.",
+            False,
+        )
 
         self._init(**kwargs)
 
@@ -92,7 +101,9 @@ class Metric(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
 
     # Metric evaluation
 
-    def evaluate(self, strategy, marginalise=None, compatible_metrics=None, context=None, **opts):
+    def evaluate(
+        self, strategy, marginalise=None, compatible_metrics=None, context=None, **opts
+    ):
         # TODO: Check that strategy has required measures, segmentation and constraints.
         implementation = self.implementation_for_strategy(strategy)
         return implementation.evaluate(
@@ -103,7 +114,9 @@ class Metric(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
             **self.opts.process(**opts)
         )
 
-    def get_ir(self, strategy, marginalise=None, compatible_metrics=None, context=None, **opts):
+    def get_ir(
+        self, strategy, marginalise=None, compatible_metrics=None, context=None, **opts
+    ):
         implementation = self.implementation_for_strategy(strategy)
         return implementation.get_ir(
             strategy,
@@ -118,7 +131,7 @@ class Metric(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
         return "{}<{}>".format(self.__class__.__name__, self.name)
 
     def __repr_expr__(self):
-        return "function(`{}`)".format('`, `'.join(self.required_measures))
+        return "function(`{}`)".format("`, `".join(self.required_measures))
 
     def __repr_dist__(self):
         pass
@@ -139,7 +152,6 @@ class Metric(OptionsMixin, metaclass=SubclassRegisteringABCMeta):
 
 
 class CustomMetric(Metric):
-
     def _init(self):
         self._required_measures = []
         self._required_segmentation = []
@@ -188,11 +200,15 @@ class MetricImplementation(metaclass=SubclassRegisteringABCMeta):
         return self
 
     @abstractmethod
-    def evaluate(self, strategy, marginalise=None, compatible_metrics=None, context=None, **opts):
+    def evaluate(
+        self, strategy, marginalise=None, compatible_metrics=None, context=None, **opts
+    ):
         raise NotImplementedError
 
     @abstractmethod
-    def get_ir(self, strategy, marginalise=None, compatible_metrics=None, context=None, **opts):
+    def get_ir(
+        self, strategy, marginalise=None, compatible_metrics=None, context=None, **opts
+    ):
         raise NotImplementedError
 
     @abstractmethod
