@@ -7,9 +7,9 @@ from mensor.utils import SequenceMap
 from .base import MeasureProvider
 from ..registries import global_stats_registry
 from ..structures.evaluated import EvaluatedMeasures
+from ..structures.strategy import EvaluationStrategy
 from ..structures.features import Dimension, Measure, Feature, Identifier
 from ..structures.resolved import ResolvedFeature
-
 
 __all__ = ["MutableMeasureProvider"]
 
@@ -421,7 +421,7 @@ class MutableMeasureProvider(MeasureProvider):
         # (assuming it has not already been requested), so that we can weight
         # post-joins appropriately.
         if len(joins_post) > 0 and "count" not in measures:
-            count_measure = self.measures["count"].as_private
+            count_measure = ResolvedFeature(self.measures["count"]).as_private
             measures[count_measure] = count_measure
 
         # If there are post-joins, we need to ensure that the pre- operations
@@ -476,7 +476,7 @@ class MutableMeasureProvider(MeasureProvider):
                     )
 
             # Check columns in resulting dataframe
-            expected_columns = Measure.get_all_fields(
+            expected_columns = ResolvedFeature.get_all_fields(
                 measures_post,
                 unit_type=unit_type,
                 rebase_agg=True,

@@ -8,7 +8,7 @@ from mensor.utils import SequenceMap
 from mensor.constraints import CONSTRAINTS
 from mensor.measures import MutableMeasureProvider
 from mensor.measures.registries import global_stats_registry
-from mensor.measures.structures.features import Measure
+from mensor.measures.structures.resolved import ResolvedFeature
 
 
 class PandasMeasureProvider(MutableMeasureProvider):
@@ -214,7 +214,7 @@ class PandasMeasureProvider(MutableMeasureProvider):
         reagg=False,
     ):
 
-        measure_cols = Measure.get_all_fields(
+        measure_cols = ResolvedFeature.get_all_fields(
             measures,
             unit_type=unit_type,
             rebase_agg=rebase_agg,

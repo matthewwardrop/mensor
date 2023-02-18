@@ -274,6 +274,8 @@ class MetaMeasureProvider(MeasureProvider):
 
     # MeasureEvaluator methods
     def identifier_for_unit(self, unit_type):
+        if isinstance(unit_type, ResolvedFeatureCandidates):  # TODO: Is this necessary?
+            unit_type = unit_type.features[0]
         return ResolvedFeatureCandidates(features=self._cache.identifiers[unit_type])
 
     def _features_lookup(self, unit_type, kind, attr_filter=None):

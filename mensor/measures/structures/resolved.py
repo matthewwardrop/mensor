@@ -1,4 +1,5 @@
 import re
+from collections import OrderedDict
 
 from .features import Feature
 
@@ -230,8 +231,12 @@ class ResolvedFeature:
         if isinstance(other, str):
             return self.mask == other
         if isinstance(other, Feature):
-            return self.name == other.name and type(self.feature[0]) == type(
+            return self.name == other.name and type(self.feature) == type(
                 other
+            )  # TODO: fix
+        if isinstance(other, ResolvedFeature):
+            return self.name == other.name and type(self.feature) == type(
+                other.feature
             )  # TODO: fix
         return False
 

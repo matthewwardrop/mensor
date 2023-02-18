@@ -219,12 +219,13 @@ class MeasureProvider(metaclass=InterfaceMeta):
         elif isinstance(unit_type, Feature):
             unit_type = unit_type.name
 
-        if startseq_match(unit_type.split(":"), feature.split(":")):
-            return self.identifier_for_unit(unit_type).resolve(mask=feature)
-        elif startseq_match(feature.split(":"), unit_type.split(":")):
-            raise ValueError(
-                f"Attempting to resolve a parent unit_type ({feature}) via a child ({unit_type})."
-            )
+        if unit_type is not None:
+            if startseq_match(unit_type.split(":"), feature.split(":")):
+                return self.identifier_for_unit(unit_type).resolve(mask=feature)
+            elif startseq_match(feature.split(":"), unit_type.split(":")):
+                raise ValueError(
+                    f"Attempting to resolve a parent unit_type ({feature}) via a child ({unit_type})."
+                )
 
         return self._find_feature(unit_type, feature, role=role).resolve(
             **{"mask": feature, **(with_props or {})}
